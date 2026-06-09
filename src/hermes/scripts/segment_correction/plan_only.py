@@ -53,7 +53,7 @@ def parse_args(argv=None):
     )
     p.add_argument(
         "--planner-mode",
-        choices=("uniform", "exact_dp"),
+        choices=("uniform", "exact_dp", "dp_monotonicity"),
         default="exact_dp",
         help="Partition planner mode (default: exact_dp).",
     )
@@ -73,6 +73,14 @@ def parse_args(argv=None):
         "--export-dag",
         action="store_true",
         help="Export DAG plots/CSVs during planning-only runs.",
+    )
+    p.add_argument(
+        "--verify-dp-monotonicity",
+        action="store_true",
+        help=(
+            "For exact_dp or dp_monotonicity, check whether optimal cut positions satisfy "
+            "opt[p][j] <= opt[p][j+1]."
+        ),
     )
     return p.parse_args(argv)
 
@@ -134,6 +142,22 @@ def main(argv=None):
         global_max_cut_depth=int(runtime_plan.get("global_max_cut_depth", 0)),
     )
     print(f"segments_per_supersegment: {runtime_plan['segments_per_supersegment']}")
+    dp_algorithm = runtime_plan["partition_summary"].get("dp_algorithm")
+    if dp_algorithm is not None:
+        print(
+            "[dp] "
+            f"algorithm={dp_algorithm} "
+            f"transition_evaluations="
+            f"{int(runtime_plan['partition_summary'].get('dp_transition_evaluations', 0))}"
+        )
+    dp_monotonicity = runtime_plan["partition_summary"].get("dp_monotonicity")
+    if dp_monotonicity is not None:
+        status = "PASS" if bool(dp_monotonicity.get("holds", False)) else "FAIL"
+        print(
+            "[dp-monotonicity] "
+            f"{status}: violations={int(dp_monotonicity.get('num_violations', 0))} "
+            f"states_checked={int(dp_monotonicity.get('num_states_checked', 0))}"
+        )
 
     summary = build_planning_summary(
         runtime_plan=runtime_plan,

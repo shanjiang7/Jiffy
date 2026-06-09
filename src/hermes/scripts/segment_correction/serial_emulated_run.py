@@ -20,7 +20,6 @@ from hermes.physics.material import phys_parameter
 from hermes.runtime.config import load_config
 from hermes.scheduling.planning import build_runtime_plan
 from hermes.scripts.outer_solver import build_outer_context
-from hermes.scripts.segment_correction.core import _build_predecessor_map
 from hermes.scripts.segment_correction.emulated_runtime import run_emulated_parallel_tracer
 from hermes.scripts.segment_correction.output import (
     build_component_start_snapshot_steps,
@@ -34,26 +33,89 @@ from hermes.utils.path_utils import resolve_path
 
 def _find_rank_boundary_component(
     *,
-    path_defs,
     rank_assignments: dict[int, list[int]],
-    ss_per_layer: int,
+    component_predecessors: dict[int, list[int]],
     source_rank: int,
     target_rank: int,
 ) -> tuple[int, int]:
-    pred_map = _build_predecessor_map(path_defs, int(ss_per_layer))
     comp_to_rank = {
         int(comp_id): int(rank)
         for rank, comps in rank_assignments.items()
         for comp_id in comps
     }
     for comp_id in sorted(int(c) for c in rank_assignments.get(int(target_rank), [])):
-        pred_id = pred_map.get(int(comp_id))
-        if pred_id is not None and int(comp_to_rank.get(int(pred_id), -1)) == int(source_rank):
-            return int(pred_id), int(comp_id)
+        for pred_id in sorted(int(p) for p in component_predecessors.get(int(comp_id), [])):
+            if int(comp_to_rank.get(int(pred_id), -1)) == int(source_rank):
+                return int(pred_id), int(comp_id)
     raise ValueError(
         f"No same-layer correction boundary found from rank {int(source_rank)} "
         f"to rank {int(target_rank)}."
     )
+
+
+def _build_rank_dependency_summary(
+    *,
+    rank_assignments: dict[int, list[int]],
+    component_predecessors: dict[int, list[int]],
+) -> dict[str, object]:
+    comp_to_rank = {
+        int(comp_id): int(rank)
+        for rank, comps in rank_assignments.items()
+        for comp_id in comps
+    }
+    rank_pred_sets: dict[int, set[int]] = {
+        int(rank): set() for rank in rank_assignments
+    }
+    rank_succ_sets: dict[int, set[int]] = {
+        int(rank): set() for rank in rank_assignments
+    }
+    rank_edges: list[dict[str, int]] = []
+    seen_edges: set[tuple[int, int, int, int]] = set()
+
+    for dst_comp, pred_comps in component_predecessors.items():
+        dst_rank = comp_to_rank.get(int(dst_comp))
+        if dst_rank is None:
+            continue
+        for src_comp in pred_comps:
+            src_rank = comp_to_rank.get(int(src_comp))
+            if src_rank is None:
+                continue
+            edge_key = (int(src_rank), int(dst_rank), int(src_comp), int(dst_comp))
+            if edge_key in seen_edges:
+                continue
+            seen_edges.add(edge_key)
+            rank_edges.append(
+                {
+                    "src_rank": int(src_rank),
+                    "dst_rank": int(dst_rank),
+                    "src_component": int(src_comp),
+                    "dst_component": int(dst_comp),
+                }
+            )
+            if int(src_rank) == int(dst_rank):
+                continue
+            rank_pred_sets[int(dst_rank)].add(int(src_rank))
+            rank_succ_sets[int(src_rank)].add(int(dst_rank))
+
+    return {
+        "rank_predecessors": {
+            int(rank): sorted(int(pred_rank) for pred_rank in pred_ranks)
+            for rank, pred_ranks in rank_pred_sets.items()
+        },
+        "rank_successors": {
+            int(rank): sorted(int(succ_rank) for succ_rank in succ_ranks)
+            for rank, succ_ranks in rank_succ_sets.items()
+        },
+        "rank_dependency_edges": sorted(
+            rank_edges,
+            key=lambda e: (
+                int(e["dst_rank"]),
+                int(e["src_rank"]),
+                int(e["dst_component"]),
+                int(e["src_component"]),
+            ),
+        ),
+    }
 
 
 def _component_layer_context(*, path_defs, component_id: int, ss_per_layer: int) -> dict[str, int]:
@@ -121,7 +183,7 @@ def parse_args(argv=None):
     )
     p.add_argument(
         "--planner-mode",
-        choices=("uniform", "exact_dp"),
+        choices=("uniform", "exact_dp", "dp_monotonicity"),
         default="exact_dp",
         help="Partition planner mode used to construct runtime components (default: exact_dp).",
     )
@@ -221,6 +283,18 @@ def main(argv=None):
     num_layers = int(runtime_plan["num_layers"])
     ss_per_layer = int(runtime_plan["ss_per_layer"])
     correction_horizon_ss_map = runtime_plan["correction_horizon_ss_map"]
+    component_predecessors = {
+        int(comp): [int(pred) for pred in preds]
+        for comp, preds in runtime_plan["component_predecessors"].items()
+    }
+    component_successors = {
+        int(comp): [int(succ) for succ in succs]
+        for comp, succs in runtime_plan["component_successors"].items()
+    }
+    rank_dependency_summary = _build_rank_dependency_summary(
+        rank_assignments=rank_assignments,
+        component_predecessors=component_predecessors,
+    )
     path_def_by_id = {int(pd.component_id): pd for pd in all_path_defs}
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -234,6 +308,16 @@ def main(argv=None):
     print(f"Layers:       {num_layers}  ({ss_per_layer} SS/layer)")
     print(f"emulated ranks: {int(args.world_size)}")
     print("rank distribution:", rank_assignments)
+    print("rank predecessors:", rank_dependency_summary["rank_predecessors"])
+    if rank_dependency_summary["rank_dependency_edges"]:
+        print("rank dependency edges:")
+        for edge in rank_dependency_summary["rank_dependency_edges"]:
+            if int(edge["src_rank"]) == int(edge["dst_rank"]):
+                continue
+            print(
+                f"  rank {int(edge['dst_rank'])} <- rank {int(edge['src_rank'])} "
+                f"(component {int(edge['dst_component'])} <- {int(edge['src_component'])})"
+            )
 
     ambient_gpu = cp.full((n_all,), ctx.u0, dtype=float_type)
     h_m = float(rc.level3.h_tuple[0])
@@ -275,9 +359,8 @@ def main(argv=None):
         )
     elif args.boundary_correction_snapshot_mode:
         src_comp_id, target_comp_id = _find_rank_boundary_component(
-            path_defs=all_path_defs,
             rank_assignments=rank_assignments,
-            ss_per_layer=ss_per_layer,
+            component_predecessors=component_predecessors,
             source_rank=int(args.boundary_source_rank),
             target_rank=int(args.boundary_target_rank),
         )
@@ -349,6 +432,8 @@ def main(argv=None):
         snapshot_stride_steps=snapshot_stride_steps,
         snapshot_steps_by_component=snapshot_steps_by_component,
         correction_horizon_ss_map=correction_horizon_ss_map,
+        component_predecessors=component_predecessors,
+        component_successors=component_successors,
         h_m=h_m,
         deltaT_K=float(phys.deltaT),
         correction_payloads_out=(
@@ -374,6 +459,8 @@ def main(argv=None):
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps_by_component=snapshot_steps_by_component,
             correction_horizon_ss_map=correction_horizon_ss_map,
+            component_predecessors=component_predecessors,
+            component_successors=component_successors,
             h_m=h_m,
             deltaT_K=float(phys.deltaT),
             base_states_out=boundary_base_states_for_export,
@@ -513,6 +600,23 @@ def main(argv=None):
                 "num_layers": num_layers,
                 "ss_per_layer": ss_per_layer,
                 "world_size": int(args.world_size),
+                "rank_predecessors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in rank_dependency_summary["rank_predecessors"].items()
+                },
+                "rank_successors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in rank_dependency_summary["rank_successors"].items()
+                },
+                "rank_dependency_edges": list(rank_dependency_summary["rank_dependency_edges"]),
+                "component_predecessors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in component_predecessors.items()
+                },
+                "component_successors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in component_successors.items()
+                },
                 "early_exit_after_boundary_snapshots": boundary_export is not None,
                 "early_exit_after_rank_base_snapshots": rank_base_export is not None,
                 "rank_base_snapshot_rank": (

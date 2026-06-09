@@ -7,7 +7,7 @@
 #   sbatch run_mpi_sbatch.sh
 #   RANK_SWEEP="8 6 4 2" PATH_CONFIG=configs/fast_heat.ini sbatch run_mpi_sbatch.sh
 #   PATH_CONFIG_SWEEP="configs/fast_heat.ini configs/texas.ini" RANK_SWEEP="8 4 2" sbatch run_mpi_sbatch.sh
-#   PLANNER_MODE="exact_dp,uniform" sbatch run_mpi_sbatch.sh
+#   PLANNER_MODE="exact_dp,dp_monotonicity,uniform" sbatch run_mpi_sbatch.sh
 
 #SBATCH -J segcorr_scale
 #SBATCH -N 8
@@ -54,8 +54,8 @@ declare -a PLANNER_MODES=()
 declare -A PLANNER_MODE_SEEN=()
 for MODE in ${PLANNER_MODE//,/ }; do
   [ -z "${MODE}" ] && continue
-  if ! [[ "${MODE}" =~ ^(uniform|exact_dp)$ ]]; then
-    echo "[error] PLANNER_MODE entries must be 'uniform' or 'exact_dp', got '${MODE}' from '${PLANNER_MODE}'"
+  if ! [[ "${MODE}" =~ ^(uniform|exact_dp|dp_monotonicity)$ ]]; then
+    echo "[error] PLANNER_MODE entries must be 'uniform', 'exact_dp', or 'dp_monotonicity', got '${MODE}' from '${PLANNER_MODE}'"
     exit 1
   fi
   if [[ -z "${PLANNER_MODE_SEEN[${MODE}]+x}" ]]; then

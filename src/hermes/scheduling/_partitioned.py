@@ -8,6 +8,7 @@ from hermes.pipelines.components import compute_dag_and_components, export_dag_r
 from hermes.pipelines.config import PipelineConfig
 from hermes.scheduling._group_partition import (
     partition_supersegments_exact_dp,
+    partition_supersegments_monotone_dp,
     direct_partition_dag_n1,
 )
 from hermes.scheduling._grouping import _compute_cut_depths
@@ -71,6 +72,51 @@ def _build_correction_horizon_ss_map(
     return horizon_map
 
 
+def _build_component_dependency_maps(
+    runtime_components: list[Component],
+    edge_pairs: list[tuple[int, int]],
+) -> tuple[dict[int, list[int]], dict[int, list[int]], list[dict[str, int]]]:
+    """Collapse supersegment DAG edges into inter-runtime-component edges."""
+    ss_to_component: dict[int, int] = {}
+    for comp in runtime_components:
+        for ss_idx in range(int(comp.start_ss), int(comp.end_ss) + 1):
+            ss_to_component[int(ss_idx)] = int(comp.id)
+
+    predecessor_sets: dict[int, set[int]] = {
+        int(comp.id): set() for comp in runtime_components
+    }
+    successor_sets: dict[int, set[int]] = {
+        int(comp.id): set() for comp in runtime_components
+    }
+    component_edge_set: set[tuple[int, int]] = set()
+
+    for src_ss, dst_ss in edge_pairs:
+        src_comp = ss_to_component.get(int(src_ss))
+        dst_comp = ss_to_component.get(int(dst_ss))
+        if src_comp is None or dst_comp is None or int(src_comp) == int(dst_comp):
+            continue
+        edge = (int(src_comp), int(dst_comp))
+        if edge in component_edge_set:
+            continue
+        component_edge_set.add(edge)
+        successor_sets[int(src_comp)].add(int(dst_comp))
+        predecessor_sets[int(dst_comp)].add(int(src_comp))
+
+    component_predecessors = {
+        int(comp_id): sorted(int(pred) for pred in preds)
+        for comp_id, preds in predecessor_sets.items()
+    }
+    component_successors = {
+        int(comp_id): sorted(int(succ) for succ in succs)
+        for comp_id, succs in successor_sets.items()
+    }
+    component_dependency_edges = [
+        {"src_component": int(src), "dst_component": int(dst)}
+        for src, dst in sorted(component_edge_set)
+    ]
+    return component_predecessors, component_successors, component_dependency_edges
+
+
 def _build_dag_stage(
     *,
     solver_mode: str,
@@ -127,6 +173,7 @@ def _build_exact_dp_stage(
     world_size: int,
     correction_weight: float,
     dag_stage: DAGStageResult,
+    verify_dp_monotonicity: bool,
 ) -> tuple[dict, dict[int, tuple[int, int] | None]]:
     partition_summary = partition_supersegments_exact_dp(
         int(dag_stage.n_ss),
@@ -135,6 +182,27 @@ def _build_exact_dp_stage(
         segments_per_supersegment=1,
         correction_weight=float(correction_weight),
         cut_depths=dag_stage.cut_depths,
+        verify_monotonicity=bool(verify_dp_monotonicity),
+    )
+    rank_ranges = _uniform_rank_ranges(partition_summary, int(world_size))
+    return partition_summary, rank_ranges
+
+
+def _build_monotone_dp_stage(
+    *,
+    world_size: int,
+    correction_weight: float,
+    dag_stage: DAGStageResult,
+    verify_dp_monotonicity: bool,
+) -> tuple[dict, dict[int, tuple[int, int] | None]]:
+    partition_summary = partition_supersegments_monotone_dp(
+        int(dag_stage.n_ss),
+        edge_pairs=dag_stage.edge_pairs,
+        num_processors=int(world_size),
+        segments_per_supersegment=1,
+        correction_weight=float(correction_weight),
+        cut_depths=dag_stage.cut_depths,
+        verify_monotonicity=bool(verify_dp_monotonicity),
     )
     rank_ranges = _uniform_rank_ranges(partition_summary, int(world_size))
     return partition_summary, rank_ranges
@@ -157,6 +225,7 @@ def _build_partition_stage(
     world_size: int,
     correction_weight: float,
     dag_stage: DAGStageResult,
+    verify_dp_monotonicity: bool,
 ) -> tuple[dict, dict[int, tuple[int, int] | None]]:
     if str(planner_mode) == "uniform":
         partition_summary = direct_partition_dag_n1(
@@ -173,11 +242,22 @@ def _build_partition_stage(
             world_size=int(world_size),
             correction_weight=float(correction_weight),
             dag_stage=dag_stage,
+            verify_dp_monotonicity=bool(verify_dp_monotonicity),
+        )
+        return partition_summary, rank_ranges
+
+    if str(planner_mode) == "dp_monotonicity":
+        partition_summary, rank_ranges = _build_monotone_dp_stage(
+            world_size=int(world_size),
+            correction_weight=float(correction_weight),
+            dag_stage=dag_stage,
+            verify_dp_monotonicity=bool(verify_dp_monotonicity),
         )
         return partition_summary, rank_ranges
 
     raise ValueError(
-        f"Unknown planner_mode '{planner_mode}', expected 'uniform' or 'exact_dp'."
+        f"Unknown planner_mode '{planner_mode}', expected 'uniform', 'exact_dp', "
+        "or 'dp_monotonicity'."
     )
 
 
@@ -227,6 +307,7 @@ def build_partitioned_runtime_plan(
     float_type,
     solver_velocity_mps: float,
     export_outputs: bool = True,
+    verify_dp_monotonicity: bool = False,
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),
@@ -248,6 +329,7 @@ def build_partitioned_runtime_plan(
         world_size=int(world_size),
         correction_weight=float(correction_weight),
         dag_stage=dag_stage,
+        verify_dp_monotonicity=bool(verify_dp_monotonicity),
     )
 
     runtime_components, rank_assignments = _build_runtime_components_and_assignments(
@@ -279,6 +361,12 @@ def build_partitioned_runtime_plan(
         cut_depths=dag_stage.cut_depths,
         ss_per_layer=int(dag_stage.dag_result.ss_per_layer),
     )
+    component_predecessors, component_successors, component_dependency_edges = (
+        _build_component_dependency_maps(
+            runtime_components=runtime_components,
+            edge_pairs=dag_stage.edge_pairs,
+        )
+    )
 
     return {
         "planner_mode": str(planner_mode),
@@ -296,6 +384,9 @@ def build_partitioned_runtime_plan(
             for rank, load in partition_summary["rank_loads"].items()
         },
         "correction_horizon_ss_map": correction_horizon_ss_map,
+        "component_predecessors": component_predecessors,
+        "component_successors": component_successors,
+        "component_dependency_edges": component_dependency_edges,
         "runtime_components": runtime_components,
         "source_components": list(dag_stage.dag_result.components),
         "split_records": [],

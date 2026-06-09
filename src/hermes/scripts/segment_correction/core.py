@@ -31,6 +31,126 @@ def _build_successor_map(pred_map: Dict[int, int | None]) -> Dict[int, int]:
     return {int(pred): int(comp) for comp, pred in pred_map.items() if pred is not None}
 
 
+def _legacy_component_predecessors(
+    path_defs: List[PathDef],
+    ss_per_layer: int,
+) -> Dict[int, list[int]]:
+    pred_map = _build_predecessor_map(path_defs, ss_per_layer)
+    return {
+        int(comp_id): ([] if pred is None else [int(pred)])
+        for comp_id, pred in pred_map.items()
+    }
+
+
+def _normalise_dependency_maps(
+    path_defs: List[PathDef],
+    ss_per_layer: int,
+    component_predecessors: Dict[int, List[int]] | None,
+    component_successors: Dict[int, List[int]] | None,
+) -> tuple[Dict[int, list[int]], Dict[int, list[int]]]:
+    component_ids = sorted(int(pd.component_id) for pd in path_defs)
+    if component_predecessors is None:
+        pred_map = _legacy_component_predecessors(path_defs, ss_per_layer)
+    else:
+        pred_map = {
+            int(comp_id): sorted({int(pred) for pred in preds})
+            for comp_id, preds in component_predecessors.items()
+        }
+    for comp_id in component_ids:
+        pred_map.setdefault(int(comp_id), [])
+
+    if component_successors is None:
+        succ_sets: Dict[int, set[int]] = {int(comp_id): set() for comp_id in component_ids}
+        for dst, preds in pred_map.items():
+            for src in preds:
+                succ_sets.setdefault(int(src), set()).add(int(dst))
+        succ_map = {
+            int(comp_id): sorted(int(succ) for succ in succs)
+            for comp_id, succs in succ_sets.items()
+        }
+    else:
+        succ_map = {
+            int(comp_id): sorted({int(succ) for succ in succs})
+            for comp_id, succs in component_successors.items()
+        }
+    for comp_id in component_ids:
+        succ_map.setdefault(int(comp_id), [])
+
+    return pred_map, succ_map
+
+
+def _build_component_index(path_defs: List[PathDef]) -> tuple[list[int], dict[int, int]]:
+    ordered_component_ids = [int(pd.component_id) for pd in sorted(path_defs, key=lambda p: int(p.component_id))]
+    return ordered_component_ids, {
+        int(comp_id): int(idx) for idx, comp_id in enumerate(ordered_component_ids)
+    }
+
+
+def _build_bridge_run(
+    *,
+    src_component: int,
+    dst_component: int,
+    ordered_component_ids: list[int],
+    component_index: dict[int, int],
+    path_def_by_id: Dict[int, PathDef],
+    steps_per_ss: int,
+    snapshot_stride_steps: int | None,
+    snapshot_steps_by_component: Dict[int, List[int]] | None,
+    correction_horizon_ss_map: Dict[int, int] | None,
+) -> tuple[float, float, list, int, list[int]]:
+    src_idx = int(component_index[int(src_component)])
+    dst_idx = int(component_index[int(dst_component)])
+    if int(dst_idx) <= int(src_idx):
+        raise ValueError(
+            f"Component dependency must point forward in path order, got "
+            f"{int(src_component)} -> {int(dst_component)}."
+        )
+
+    bridge_ids = ordered_component_ids[int(src_idx) + 1 : int(dst_idx) + 1]
+    bridge_defs = [path_def_by_id[int(comp_id)] for comp_id in bridge_ids]
+    if not bridge_defs:
+        raise RuntimeError(
+            f"No bridge path found for component dependency "
+            f"{int(src_component)} -> {int(dst_component)}."
+        )
+
+    gap_steps = sum(int(pd.total_steps) for pd in bridge_defs[:-1])
+    target_pd = path_def_by_id[int(dst_component)]
+    target_snapshot_steps = _snapshot_steps_for_component(
+        int(dst_component),
+        snapshot_steps_by_component,
+    )
+    if target_snapshot_steps is None:
+        stride = int(snapshot_stride_steps) if snapshot_stride_steps is not None else int(steps_per_ss)
+        if int(stride) <= 0:
+            raise ValueError("snapshot_stride_steps must be >= 1")
+        target_snapshot_steps = list(range(0, int(target_pd.total_steps), int(stride)))
+
+    horizon_ss = 1
+    if correction_horizon_ss_map is not None:
+        horizon_ss = max(1, int(correction_horizon_ss_map.get(int(dst_component), 1)))
+    horizon_ss = min(int(horizon_ss), int(target_pd.weight))
+    max_tracer_steps = int(gap_steps) + int(steps_per_ss) * int(horizon_ss)
+    bridge_snapshot_steps = [
+        int(gap_steps) + int(step)
+        for step in target_snapshot_steps
+        if int(gap_steps) + int(step) < int(max_tracer_steps)
+    ]
+
+    bridge_legs = [
+        leg
+        for pd in bridge_defs
+        for leg in pd.legs
+    ]
+    return (
+        float(bridge_defs[0].x_start),
+        float(bridge_defs[0].y_start),
+        bridge_legs,
+        int(max_tracer_steps),
+        bridge_snapshot_steps,
+    )
+
+
 def _snapshot_steps_for_component(
     component_id: int,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
@@ -54,6 +174,21 @@ def _superpose_snapshots(
             final_snaps.append(base_snap + delta_snaps[int(snap_idx)])
         else:
             final_snaps.append(base_snap)
+    return final_snaps
+
+
+def _superpose_correction_lists(
+    base_snaps: List[np.ndarray],
+    correction_lists: List[List[np.ndarray]],
+) -> List[np.ndarray]:
+    if not base_snaps:
+        return []
+    final_snaps = [np.array(base_snap, copy=True) for base_snap in base_snaps]
+    for delta_snaps in correction_lists:
+        for snap_idx, delta_snap in enumerate(delta_snaps):
+            if int(snap_idx) >= len(final_snaps):
+                break
+            final_snaps[int(snap_idx)] = final_snaps[int(snap_idx)] + delta_snap
     return final_snaps
 
 
@@ -200,6 +335,8 @@ def run_parallel_tracer(
     snapshot_stride_steps: int | None = None,
     snapshot_steps_by_component: Dict[int, List[int]] | None = None,
     correction_horizon_ss_map: Dict[int, int] | None = None,
+    component_predecessors: Dict[int, List[int]] | None = None,
+    component_successors: Dict[int, List[int]] | None = None,
     deltaT_K: float = 1.0,
     collect_output_snapshots: bool = True,
 ) -> tuple[Dict[int, List[np.ndarray]], dict[str, float]]:
@@ -207,12 +344,11 @@ def run_parallel_tracer(
     Pipelined component execution with source-side tracer correction.
 
     Each rank runs the base simulation of its local components in path order.
-    Immediately after finishing a component, it computes the outgoing tracer
-    correction for that component's same-layer successor and sends the
-    resulting correction snapshots to the successor owner rank. The successor
-    rank later superposes those correction snapshots onto its own base
-    snapshots. The first component of each layer has no predecessor and
-    therefore needs no correction.
+    Immediately after finishing a component, it computes outgoing source-off
+    corrections for every successor listed in the component-level DAG. Remote
+    correction payloads are sent to the successor owner rank. The successor rank
+    later superposes all incoming correction snapshots onto its own base
+    snapshots.
 
     Returns `(final_states_host, timing_stats)`, where `final_states_host` maps
     component id -> list of numpy snapshot arrays when
@@ -221,9 +357,14 @@ def run_parallel_tracer(
     """
     _ = world_size
     assigned_comps = sorted(int(j) for j in assigned_comps)
-    pred_map = _build_predecessor_map(path_defs, ss_per_layer)
-    succ_map = _build_successor_map(pred_map)
+    pred_map, succ_map = _normalise_dependency_maps(
+        path_defs,
+        ss_per_layer,
+        component_predecessors,
+        component_successors,
+    )
     path_def_by_id = {int(pd.component_id): pd for pd in path_defs}
+    ordered_component_ids, component_index = _build_component_index(path_defs)
     comp_to_rank = {
         int(comp_id): int(owner_rank)
         for owner_rank, comps in rank_assignments.items()
@@ -232,7 +373,7 @@ def run_parallel_tracer(
 
     base_states_host: Dict[int, List[np.ndarray]] = {}
     final_states_host: Dict[int, List[np.ndarray]] = {}
-    local_correction_snaps: Dict[int, List[np.ndarray]] = {}
+    local_correction_snaps: Dict[int, Dict[int, List[np.ndarray]]] = {}
     send_reqs: list[object] = []
     timing_stats = {
         "base_solve_seconds": 0.0,
@@ -246,6 +387,12 @@ def run_parallel_tracer(
         "num_remote_sends": 0.0,
         "num_remote_recvs": 0.0,
         "num_local_corrections": 0.0,
+        "num_correction_edges": float(
+            sum(len(succ_map.get(int(j), [])) for j in assigned_comps)
+        ),
+        "max_component_predecessors": float(
+            max((len(preds) for preds in pred_map.values()), default=0)
+        ),
     }
 
     print(f"[rank {rank}] Base + outgoing correction pipeline.")
@@ -271,42 +418,55 @@ def run_parallel_tracer(
         if collect_output_snapshots:
             base_states_host[j] = base_snaps_host
 
-        succ_j = succ_map.get(int(j))
-        if succ_j is None:
-            continue
-        succ_pd = path_def_by_id[int(succ_j)]
-        succ_snapshot_steps = _snapshot_steps_for_component(int(succ_j), snapshot_steps_by_component)
-        horizon_ss = 1
-        if correction_horizon_ss_map is not None:
-            horizon_ss = max(1, int(correction_horizon_ss_map.get(int(succ_j), 1)))
-        horizon_ss = min(horizon_ss, int(succ_pd.weight))
-        max_tracer_steps = int(steps_per_ss) * int(horizon_ss)
-        delta_snaps_host: List[np.ndarray] = []
-        tracer_t0 = time.perf_counter()
-        _, _ = run_ss_outer(
-            ctx, final_u, succ_pd.x_start, succ_pd.y_start, succ_pd.legs, steps_per_ss,
-            source_on=False,
-            max_steps=max_tracer_steps,
-            snapshot_stride_steps=snapshot_stride_steps,
-            snapshot_steps=succ_snapshot_steps,
-            snapshot_callback=lambda snap_u, out=delta_snaps_host: out.append(cp.asnumpy(snap_u - ambient_gpu)),
-        )
-        cp.cuda.Stream.null.synchronize()
-        timing_stats["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
-        dst_rank = int(comp_to_rank[int(succ_j)])
-        if int(dst_rank) == int(rank):
-            if collect_output_snapshots:
-                local_correction_snaps[int(succ_j)] = delta_snaps_host
-                timing_stats["num_local_corrections"] += 1.0
-        else:
-            _enqueue_correction_send(
-                comm=comm,
-                dest_rank=int(dst_rank),
-                tag=int(succ_j),
-                delta_snaps_host=delta_snaps_host,
-                send_reqs=send_reqs,
+        for succ_j in succ_map.get(int(j), []):
+            (
+                bridge_x_start,
+                bridge_y_start,
+                bridge_legs,
+                max_tracer_steps,
+                bridge_snapshot_steps,
+            ) = _build_bridge_run(
+                src_component=int(j),
+                dst_component=int(succ_j),
+                ordered_component_ids=ordered_component_ids,
+                component_index=component_index,
+                path_def_by_id=path_def_by_id,
+                steps_per_ss=steps_per_ss,
+                snapshot_stride_steps=snapshot_stride_steps,
+                snapshot_steps_by_component=snapshot_steps_by_component,
+                correction_horizon_ss_map=correction_horizon_ss_map,
             )
-            timing_stats["num_remote_sends"] += 1.0
+            delta_snaps_host: List[np.ndarray] = []
+            tracer_t0 = time.perf_counter()
+            _, _ = run_ss_outer(
+                ctx,
+                final_u,
+                bridge_x_start,
+                bridge_y_start,
+                bridge_legs,
+                steps_per_ss,
+                source_on=False,
+                max_steps=max_tracer_steps,
+                snapshot_stride_steps=snapshot_stride_steps,
+                snapshot_steps=bridge_snapshot_steps,
+                snapshot_callback=lambda snap_u, out=delta_snaps_host: out.append(cp.asnumpy(snap_u - ambient_gpu)),
+            )
+            cp.cuda.Stream.null.synchronize()
+            timing_stats["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
+            dst_rank = int(comp_to_rank[int(succ_j)])
+            if int(dst_rank) == int(rank):
+                if collect_output_snapshots:
+                    local_correction_snaps.setdefault(int(succ_j), {})[int(j)] = delta_snaps_host
+                timing_stats["num_local_corrections"] += 1.0
+            else:
+                _enqueue_correction_send(
+                    comm=comm,
+                    dest_rank=int(dst_rank),
+                    tag=int(succ_j),
+                    delta_snaps_host=delta_snaps_host,
+                    send_reqs=send_reqs,
+                )
+                timing_stats["num_remote_sends"] += 1.0
 
     cp.cuda.Stream.null.synchronize()
     timing_stats["pipeline_loop_seconds"] = time.perf_counter() - loop_t0
@@ -314,26 +474,32 @@ def run_parallel_tracer(
 
     post_t0 = time.perf_counter()
     for j in assigned_comps:
-        pred_j = pred_map.get(int(j))
-        if pred_j is None:
+        pred_js = pred_map.get(int(j), [])
+        if not pred_js:
             if collect_output_snapshots:
                 final_states_host[int(j)] = list(base_states_host[int(j)])
             continue
-        src_rank = int(comp_to_rank[int(pred_j)])
-        if int(src_rank) == int(rank):
-            delta_snaps = local_correction_snaps.get(int(j), [])
-        else:
-            recv_t0 = time.perf_counter()
-            delta_snaps = _recv_correction_chunks(
-                comm=comm,
-                source_rank=int(src_rank),
-                tag=int(j),
-            )
-            timing_stats["recv_wait_seconds"] += time.perf_counter() - recv_t0
-            timing_stats["num_remote_recvs"] += 1.0
+        correction_lists: List[List[np.ndarray]] = []
+        for pred_j in pred_js:
+            src_rank = int(comp_to_rank[int(pred_j)])
+            if int(src_rank) == int(rank):
+                delta_snaps = local_correction_snaps.get(int(j), {}).get(int(pred_j), [])
+            else:
+                recv_t0 = time.perf_counter()
+                delta_snaps = _recv_correction_chunks(
+                    comm=comm,
+                    source_rank=int(src_rank),
+                    tag=int(j),
+                )
+                timing_stats["recv_wait_seconds"] += time.perf_counter() - recv_t0
+                timing_stats["num_remote_recvs"] += 1.0
+            correction_lists.append(delta_snaps)
         if collect_output_snapshots:
             superpose_t0 = time.perf_counter()
-            final_states_host[int(j)] = _superpose_snapshots(base_states_host[int(j)], delta_snaps)
+            final_states_host[int(j)] = _superpose_correction_lists(
+                base_states_host[int(j)],
+                correction_lists,
+            )
             timing_stats["local_superpose_seconds"] += time.perf_counter() - superpose_t0
 
     for req in send_reqs:

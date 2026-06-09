@@ -45,6 +45,15 @@ def build_planning_summary(
         "steps_per_ss": int(runtime_plan["steps_per_ss"]),
         "num_layers": int(runtime_plan["num_layers"]),
         "ss_per_layer": int(runtime_plan["ss_per_layer"]),
+        "component_predecessors": {
+            int(k): [int(vv) for vv in v]
+            for k, v in runtime_plan.get("component_predecessors", {}).items()
+        },
+        "component_successors": {
+            int(k): [int(vv) for vv in v]
+            for k, v in runtime_plan.get("component_successors", {}).items()
+        },
+        "component_dependency_edges": list(runtime_plan.get("component_dependency_edges", [])),
         "partition": runtime_plan["partition_summary"],
     }
     if search_summary is not None:
@@ -79,6 +88,7 @@ def build_runtime_plan(
         float_type=float_type,
         solver_velocity_mps=float(solver_velocity_mps),
         export_outputs=bool(export_outputs),
+        verify_dp_monotonicity=bool(getattr(args, "verify_dp_monotonicity", False)),
     )
 
 

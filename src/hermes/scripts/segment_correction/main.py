@@ -110,7 +110,7 @@ def parse_args(argv=None):
     )
     p.add_argument(
         "--planner-mode",
-        choices=("uniform", "exact_dp"),
+        choices=("uniform", "exact_dp", "dp_monotonicity"),
         default="exact_dp",
         help="Partition planner mode (default: exact_dp).",
     )
@@ -182,6 +182,8 @@ def main(argv=None):
             runtime_plan["ss_per_layer"],
             runtime_plan["rank_pred_loads"],
             runtime_plan["correction_horizon_ss_map"],
+            runtime_plan["component_predecessors"],
+            runtime_plan["component_successors"],
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         planning_summary = build_planning_summary(
@@ -207,6 +209,8 @@ def main(argv=None):
         ss_per_layer,
         rank_pred_loads,
         correction_horizon_ss_map,
+        component_predecessors,
+        component_successors,
     ) = bcast_data
     snap_every_steps = int(args.snap_every_steps)
     snapshot_steps_by_component = None
@@ -265,6 +269,8 @@ def main(argv=None):
         # snapshot schedule, so the runtime must see the full component map.
         snapshot_steps_by_component=snapshot_steps_by_component,
         correction_horizon_ss_map=correction_horizon_ss_map,
+        component_predecessors=component_predecessors,
+        component_successors=component_successors,
         deltaT_K=float(phys.deltaT),
         collect_output_snapshots=not bool(args.timing_only),
     )
@@ -332,6 +338,8 @@ def main(argv=None):
                 "num_remote_sends": float(timing_stats.get("num_remote_sends", 0.0)),
                 "num_remote_recvs": float(timing_stats.get("num_remote_recvs", 0.0)),
                 "num_local_corrections": float(timing_stats.get("num_local_corrections", 0.0)),
+                "num_correction_edges": float(timing_stats.get("num_correction_edges", 0.0)),
+                "max_component_predecessors": float(timing_stats.get("max_component_predecessors", 0.0)),
             }
             rank_timing_summary[str(rank_idx)] = merged_stats
             print(
@@ -351,6 +359,14 @@ def main(argv=None):
                 "ss_per_layer": ss_per_layer,
                 "num_ranks": world_size,
                 "parallel_total_seconds": par_dt,
+                "component_predecessors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in component_predecessors.items()
+                },
+                "component_successors": {
+                    str(int(k)): [int(vv) for vv in v]
+                    for k, v in component_successors.items()
+                },
                 "rank_timing_breakdown": rank_timing_summary,
             }, f, indent=2)
         print(f"Saved timing to {out_dir / 'timing_summary.json'}")

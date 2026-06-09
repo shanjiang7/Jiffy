@@ -9,11 +9,11 @@ import numpy as np
 from hermes.motion.types import PathDef
 from hermes.scripts.outer_solver import OuterContext, run_ss_outer
 from hermes.scripts.segment_correction.core import (
-    _build_predecessor_map,
-    _build_successor_map,
-    _correction_stats,
+    _build_bridge_run,
+    _build_component_index,
+    _normalise_dependency_maps,
     _snapshot_steps_for_component,
-    _superpose_snapshots,
+    _superpose_correction_lists,
 )
 from hermes.utils.snapshot_utils import crop_snapshot
 
@@ -65,6 +65,8 @@ def run_emulated_parallel_tracer(
     snapshot_stride_steps: int | None = None,
     snapshot_steps_by_component: Dict[int, List[int]] | None = None,
     correction_horizon_ss_map: Dict[int, int] | None = None,
+    component_predecessors: Dict[int, List[int]] | None = None,
+    component_successors: Dict[int, List[int]] | None = None,
     h_m: float | None = None,
     deltaT_K: float = 1.0,
     correction_payloads_out: Dict[int, List[np.ndarray]] | None = None,
@@ -82,9 +84,14 @@ def run_emulated_parallel_tracer(
     communication with in-memory payload handoff so multi-rank behavior can be
     debugged on a single GPU.
     """
-    pred_map = _build_predecessor_map(path_defs, ss_per_layer)
-    succ_map = _build_successor_map(pred_map)
+    pred_map, succ_map = _normalise_dependency_maps(
+        path_defs,
+        ss_per_layer,
+        component_predecessors,
+        component_successors,
+    )
     path_def_by_id = {int(pd.component_id): pd for pd in path_defs}
+    ordered_component_ids, component_index = _build_component_index(path_defs)
     comp_to_rank = {
         int(comp_id): int(owner_rank)
         for owner_rank, comps in rank_assignments.items()
@@ -101,7 +108,7 @@ def run_emulated_parallel_tracer(
 
     base_states_host: Dict[int, List[np.ndarray]] = {}
     final_states_host: Dict[int, List[np.ndarray]] = {}
-    correction_payloads: Dict[int, List[np.ndarray]] = {}
+    correction_payloads: Dict[int, Dict[int, List[np.ndarray]]] = {}
     processed_base_components: set[int] = set()
     rank_timing_stats: dict[int, dict[str, float]] = {
         int(rank): {
@@ -117,6 +124,12 @@ def run_emulated_parallel_tracer(
             "num_remote_sends": 0.0,
             "num_remote_recvs": 0.0,
             "num_local_corrections": 0.0,
+            "num_correction_edges": float(
+                sum(len(succ_map.get(int(comp_id), [])) for comp_id in rank_assignments.get(int(rank), []))
+            ),
+            "max_component_predecessors": float(
+                max((len(preds) for preds in pred_map.values()), default=0)
+            ),
         }
         for rank in rank_assignments
     }
@@ -184,69 +197,83 @@ def run_emulated_parallel_tracer(
                 _release_cupy_temporaries()
                 continue
 
-            succ_j = succ_map.get(int(j))
-            if succ_j is None:
-                del final_u
-                _release_cupy_temporaries()
-                continue
-            succ_pd = path_def_by_id[int(succ_j)]
-            succ_snapshot_steps = _snapshot_steps_for_component(int(succ_j), snapshot_steps_by_component)
-            horizon_ss = 1
-            if correction_horizon_ss_map is not None:
-                horizon_ss = max(1, int(correction_horizon_ss_map.get(int(succ_j), 1)))
-            horizon_ss = min(horizon_ss, int(succ_pd.weight))
-            max_tracer_steps = int(steps_per_ss) * int(horizon_ss)
-            delta_snaps_host: List[np.ndarray] = []
-            tracer_t0 = time.perf_counter()
-            _, _ = run_ss_outer(
-                ctx, final_u, succ_pd.x_start, succ_pd.y_start, succ_pd.legs, steps_per_ss,
-                source_on=False,
-                max_steps=max_tracer_steps,
-                snapshot_stride_steps=snapshot_stride_steps,
-                snapshot_steps=succ_snapshot_steps,
-                snapshot_callback=(
-                    lambda snap_u,
-                    out=delta_snaps_host,
-                    ambient_gpu=ambient_gpu,
-                    nx=int(ctx.nx),
-                    ny=int(ctx.ny),
-                    nz=int(ctx.nz),
-                    h_m=h_m: _append_host_delta_snapshot(
-                        out,
-                        snap_u,
+            captured_any_for_export = False
+            for succ_j in succ_map.get(int(j), []):
+                (
+                    bridge_x_start,
+                    bridge_y_start,
+                    bridge_legs,
+                    max_tracer_steps,
+                    bridge_snapshot_steps,
+                ) = _build_bridge_run(
+                    src_component=int(j),
+                    dst_component=int(succ_j),
+                    ordered_component_ids=ordered_component_ids,
+                    component_index=component_index,
+                    path_def_by_id=path_def_by_id,
+                    steps_per_ss=steps_per_ss,
+                    snapshot_stride_steps=snapshot_stride_steps,
+                    snapshot_steps_by_component=snapshot_steps_by_component,
+                    correction_horizon_ss_map=correction_horizon_ss_map,
+                )
+                delta_snaps_host: List[np.ndarray] = []
+                tracer_t0 = time.perf_counter()
+                _, _ = run_ss_outer(
+                    ctx,
+                    final_u,
+                    bridge_x_start,
+                    bridge_y_start,
+                    bridge_legs,
+                    steps_per_ss,
+                    source_on=False,
+                    max_steps=max_tracer_steps,
+                    snapshot_stride_steps=snapshot_stride_steps,
+                    snapshot_steps=bridge_snapshot_steps,
+                    snapshot_callback=(
+                        lambda snap_u,
+                        out=delta_snaps_host,
                         ambient_gpu=ambient_gpu,
-                        nx=nx,
-                        ny=ny,
-                        nz=nz,
-                        h_m=h_m,
-                    )
-                ),
-            )
-            cp.cuda.Stream.null.synchronize()
-            rank_timing_stats[int(rank)]["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
-            correction_payloads[int(succ_j)] = delta_snaps_host
-            captured_for_export = correction_payloads_out is not None and (
-                capture_correction_components_norm is None
-                or int(succ_j) in capture_correction_components_norm
-            )
-            if captured_for_export:
-                correction_payloads_out[int(succ_j)] = list(delta_snaps_host)
-            dst_rank = int(comp_to_rank[int(succ_j)])
-            if int(dst_rank) == int(rank):
-                rank_timing_stats[int(rank)]["num_local_corrections"] += 1.0
-            else:
-                rank_timing_stats[int(rank)]["num_remote_sends"] += 1.0
+                        nx=int(ctx.nx),
+                        ny=int(ctx.ny),
+                        nz=int(ctx.nz),
+                        h_m=h_m: _append_host_delta_snapshot(
+                            out,
+                            snap_u,
+                            ambient_gpu=ambient_gpu,
+                            nx=nx,
+                            ny=ny,
+                            nz=nz,
+                            h_m=h_m,
+                        )
+                    ),
+                )
+                cp.cuda.Stream.null.synchronize()
+                rank_timing_stats[int(rank)]["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
+                correction_payloads.setdefault(int(succ_j), {})[int(j)] = delta_snaps_host
+                captured_for_export = correction_payloads_out is not None and (
+                    capture_correction_components_norm is None
+                    or int(succ_j) in capture_correction_components_norm
+                )
+                if captured_for_export:
+                    correction_payloads_out[int(succ_j)] = list(delta_snaps_host)
+                    captured_any_for_export = True
+                dst_rank = int(comp_to_rank[int(succ_j)])
+                if int(dst_rank) == int(rank):
+                    rank_timing_stats[int(rank)]["num_local_corrections"] += 1.0
+                else:
+                    rank_timing_stats[int(rank)]["num_remote_sends"] += 1.0
+                if bool(stop_after_captured_corrections) and captured_for_export:
+                    break
             del final_u
             _release_cupy_temporaries()
-            if bool(stop_after_captured_corrections) and captured_for_export:
+            if bool(stop_after_captured_corrections) and captured_any_for_export:
                 rank_timing_stats[int(rank)]["pipeline_loop_seconds"] = time.perf_counter() - loop_t0
                 rank_timing_stats[int(rank)]["rank_total_seconds"] = (
                     rank_timing_stats[int(rank)]["pipeline_loop_seconds"]
                 )
                 print(
                     f"[emulated rank {rank}] Early exit after capturing correction "
-                    f"for component {int(succ_j)} in "
-                    f"{rank_timing_stats[int(rank)]['pipeline_loop_seconds']:.3f} s"
+                    f"in {rank_timing_stats[int(rank)]['pipeline_loop_seconds']:.3f} s"
                 )
                 _release_cupy_temporaries()
                 print("[emulated] Early exit after requested correction snapshots.")
@@ -263,16 +290,22 @@ def run_emulated_parallel_tracer(
         post_t0 = time.perf_counter()
         assigned_comps = sorted(int(j) for j in rank_assignments.get(int(rank), []))
         for j in assigned_comps:
-            pred_j = pred_map.get(int(j))
-            if pred_j is None:
+            pred_js = pred_map.get(int(j), [])
+            if not pred_js:
                 final_states_host[int(j)] = list(base_states_host[int(j)])
                 continue
-            src_rank = int(comp_to_rank[int(pred_j)])
-            delta_snaps = correction_payloads.get(int(j), [])
-            if int(src_rank) != int(rank):
-                rank_timing_stats[int(rank)]["num_remote_recvs"] += 1.0
+            correction_lists: List[List[np.ndarray]] = []
+            for pred_j in pred_js:
+                src_rank = int(comp_to_rank[int(pred_j)])
+                delta_snaps = correction_payloads.get(int(j), {}).get(int(pred_j), [])
+                if int(src_rank) != int(rank):
+                    rank_timing_stats[int(rank)]["num_remote_recvs"] += 1.0
+                correction_lists.append(delta_snaps)
             superpose_t0 = time.perf_counter()
-            final_states_host[int(j)] = _superpose_snapshots(base_states_host[int(j)], delta_snaps)
+            final_states_host[int(j)] = _superpose_correction_lists(
+                base_states_host[int(j)],
+                correction_lists,
+            )
             rank_timing_stats[int(rank)]["local_superpose_seconds"] += time.perf_counter() - superpose_t0
         rank_timing_stats[int(rank)]["post_pipeline_seconds"] = time.perf_counter() - post_t0
         rank_timing_stats[int(rank)]["rank_total_seconds"] = (
