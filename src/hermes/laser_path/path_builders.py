@@ -9,41 +9,31 @@ import numpy as np
 PathSectionND = tuple[np.ndarray, bool]
 
 
+_DIR_TOKENS = {
+    "+x": (1, 0), "x+": (1, 0), "posx": (1, 0),
+    "-x": (-1, 0), "x-": (-1, 0), "negx": (-1, 0),
+    "+y": (0, 1), "y+": (0, 1), "posy": (0, 1),
+    "-y": (0, -1), "y-": (0, -1), "negy": (0, -1),
+}
+
+
 def _parse_dir_to_unit(dir_str: str) -> tuple[float, float]:
     """
-    Parse 'dir' like '+y', '-x', or diagonal '+y,+x' into a unit vector (vx, vy).
+    Parse 'dir' like '+y', '-x' (aliases 'x+', 'posx', ...) or a diagonal
+    combination '+y,+x' into a unit vector (vx, vy).
     """
-    tok = [t.strip().lower() for t in dir_str.split(",") if t.strip()]
     sx = 0
     sy = 0
-    for t in tok:
-        if t == "+x":
-            sx += 1
-        elif t == "-x":
-            sx -= 1
-        elif t == "+y":
-            sy += 1
-        elif t == "-y":
-            sy -= 1
-        else:
+    for t in (t.strip().lower() for t in dir_str.split(",") if t.strip()):
+        if t not in _DIR_TOKENS:
             raise ValueError(f"Unknown direction token in dir={dir_str!r}: {t!r}")
+        dx, dy = _DIR_TOKENS[t]
+        sx += dx
+        sy += dy
     if sx == 0 and sy == 0:
         raise ValueError(f"dir={dir_str!r} results in zero direction.")
     n = math.hypot(sx, sy)
     return sx / n, sy / n
-
-
-def _unit_from_dir(dir_str: str) -> tuple[float, float]:
-    d = dir_str.strip().lower()
-    if d in {"+x", "x+", "posx"}:
-        return (1.0, 0.0)
-    if d in {"-x", "x-", "negx"}:
-        return (-1.0, 0.0)
-    if d in {"+y", "y+", "posy"}:
-        return (0.0, 1.0)
-    if d in {"-y", "y-", "negy"}:
-        return (0.0, -1.0)
-    raise ValueError(f"Unknown dir: {dir_str!r}")
 
 
 def _to_nd(x_m: float, len_scale: float) -> float:
@@ -98,7 +88,7 @@ def build_segments_nd(
         for seg in segments:
             L = float(seg["length_m"])
             if "dir" in seg:
-                ux, uy = _unit_from_dir(seg["dir"])
+                ux, uy = _parse_dir_to_unit(seg["dir"])
             else:
                 vx, vy = float(seg["vx"]), float(seg["vy"])
                 nrm = (vx * vx + vy * vy) ** 0.5
@@ -695,24 +685,3 @@ def build_picture_nd(
     return W
 
 
-def _create_path_legacy(
-    x_new_nd: np.ndarray,
-    y_new_nd: np.ndarray,
-    boundary_path,
-    n: int = 100,
-) -> list[list[float]]:
-    """Legacy n-based zigzag path creation."""
-    zigzag_trajectory: list[list[float]] = []
-    x_vals = np.linspace(np.min(x_new_nd), np.max(x_new_nd), num=n)
-
-    for i, x in enumerate(x_vals):
-        if i % 2 == 0:
-            y_traj = np.linspace(np.min(y_new_nd), np.max(y_new_nd), num=n)
-        else:
-            y_traj = np.linspace(np.max(y_new_nd), np.min(y_new_nd), num=n)
-
-        for y in y_traj:
-            if boundary_path.contains_point((x, y)):
-                zigzag_trajectory.append([float(x), float(y)])
-
-    return zigzag_trajectory
