@@ -6,9 +6,9 @@
 #   sbatch run_mpi_strong_scaling_hilbert_hybrid_64_32_sbatch.sh
 
 #SBATCH -J segcorr_hh_64_32
-#SBATCH -N 64
-#SBATCH -n 64
-#SBATCH -t 02:00:00
+#SBATCH -N 4
+#SBATCH -n 4
+#SBATCH -t 10:00:00
 #SBATCH -o logs/segcorr_hh_64_32_%j.out
 #SBATCH -e logs/segcorr_hh_64_32_%j.err
 #SBATCH -p gh
@@ -34,14 +34,14 @@ conda activate hermes
 
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 
-CONFIG=${CONFIG:-configs/sim_ex1.ini}
-PATH_CONFIG_SWEEP=${PATH_CONFIG_SWEEP:-"configs/hilbert.ini configs/hybrid_spiral_raster.ini"}
-RANK_SWEEP=${RANK_SWEEP:-"64 32"}
+CONFIG=${CONFIG:-configs/examples/sim_ex1.ini}
+PATH_CONFIG_SWEEP=${PATH_CONFIG_SWEEP:-"configs/examples/hilbert.ini"}
+RANK_SWEEP=${RANK_SWEEP:-"4 2 1"}
 DT_US=${DT_US:-10}
 PLANNER_MODE=${PLANNER_MODE:-uniform}
 CORRECTION_WEIGHT=${CORRECTION_WEIGHT:-0.25}
 PAR_SOLVER_MODE=${PAR_SOLVER_MODE:-fused}
-MAX_RANKS=${SLURM_NTASKS:-64}
+MAX_RANKS=${SLURM_NTASKS:-4}
 RUN_ROOT=${RUN_ROOT:-outputs/segment_correction_strong_scaling_hilbert_hybrid_64_32_${SLURM_JOB_ID:-manual}}
 
 if [ "${PLANNER_MODE}" != "uniform" ]; then
