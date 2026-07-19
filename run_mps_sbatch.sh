@@ -5,8 +5,8 @@
 #
 # Usage:
 #   sbatch run_mps_sbatch.sh
-#   GPU_SWEEP="8 6 4 2" MPS_SPLIT=50/50 PATH_CONFIG=configs/fast_heat.ini sbatch run_mps_sbatch.sh
-#   PATH_CONFIG_SWEEP="configs/fast_heat.ini configs/texas.ini" GPU_SWEEP="8 4 2" sbatch run_mps_sbatch.sh
+#   GPU_SWEEP="8 6 4 2" MPS_SPLIT=50/50 PATH_CONFIG=configs/examples/fast_heat.ini sbatch run_mps_sbatch.sh
+#   PATH_CONFIG_SWEEP="configs/examples/fast_heat.ini configs/examples/texas.ini" GPU_SWEEP="8 4 2" sbatch run_mps_sbatch.sh
 #   N_GPU="8,6,4,2" PLANNER_MODE="exact_dp,uniform" sbatch run_mps_sbatch.sh
 
 #SBATCH -J segcorr_mps_scale
@@ -45,7 +45,7 @@ export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
 
 CONFIG=${CONFIG:-configs/sim_ex3.ini}
-PATH_CONFIG=${PATH_CONFIG:-configs/fast_heat.ini}
+PATH_CONFIG=${PATH_CONFIG:-configs/examples/fast_heat.ini}
 PATH_CONFIG_SWEEP=${PATH_CONFIG_SWEEP:-${PATH_CONFIG}}
 DT_US=${DT_US:-10}
 PLANNER_MODE=${PLANNER_MODE:-"exact_dp uniform"}

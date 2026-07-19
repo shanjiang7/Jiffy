@@ -5,8 +5,8 @@
 #
 # Usage:
 #   sbatch run_mpi_sbatch.sh
-#   RANK_SWEEP="8 6 4 2" PATH_CONFIG=configs/fast_heat.ini sbatch run_mpi_sbatch.sh
-#   PATH_CONFIG_SWEEP="configs/fast_heat.ini configs/texas.ini" RANK_SWEEP="8 4 2" sbatch run_mpi_sbatch.sh
+#   RANK_SWEEP="8 6 4 2" PATH_CONFIG=configs/examples/fast_heat.ini sbatch run_mpi_sbatch.sh
+#   PATH_CONFIG_SWEEP="configs/examples/fast_heat.ini configs/examples/texas.ini" RANK_SWEEP="8 4 2" sbatch run_mpi_sbatch.sh
 #   PLANNER_MODE="exact_dp,dp_monotonicity,uniform" sbatch run_mpi_sbatch.sh
 
 #SBATCH -J segcorr_scale
@@ -39,9 +39,9 @@ conda activate hermes
 
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 
-CONFIG=${CONFIG:-configs/sim_ex1.ini}
-PATH_CONFIG=${PATH_CONFIG:-configs/fast_heat.ini}
-PATH_CONFIG_SWEEP=${PATH_CONFIG_SWEEP:-"configs/hilbert.ini"}
+CONFIG=${CONFIG:-configs/examples/sim_ex1.ini}
+PATH_CONFIG=${PATH_CONFIG:-configs/examples/fast_heat.ini}
+PATH_CONFIG_SWEEP=${PATH_CONFIG_SWEEP:-"configs/examples/hilbert.ini"}
 DT_US=${DT_US:-10}
 PLANNER_MODE=${PLANNER_MODE:-"exact_dp uniform"}
 CORRECTION_WEIGHT=${CORRECTION_WEIGHT:-0.25}

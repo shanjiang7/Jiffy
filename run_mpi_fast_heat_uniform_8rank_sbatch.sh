@@ -34,8 +34,8 @@ conda activate hermes
 
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 
-CONFIG=${CONFIG:-configs/sim_ex1.ini}
-PATH_CONFIG=${PATH_CONFIG:-configs/fast_heat.ini}
+CONFIG=${CONFIG:-configs/examples/sim_ex1.ini}
+PATH_CONFIG=${PATH_CONFIG:-configs/examples/fast_heat.ini}
 DT_US=${DT_US:-10}
 PLANNER_MODE=${PLANNER_MODE:-uniform}
 CORRECTION_WEIGHT=${CORRECTION_WEIGHT:-0.25}

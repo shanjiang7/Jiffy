@@ -26,3 +26,6 @@ venv/
 env/
 
 tmp/
+
+# Paper PDF (not part of the artifact)
+SC26_amheat.pdf
