@@ -20,7 +20,7 @@ from hermes.physics.material import phys_parameter
 from hermes.runtime.config import load_config
 from hermes.scheduling.planning import build_runtime_plan
 from hermes.scripts.outer_solver import build_outer_context
-from hermes.scripts.segment_correction.emulated_runtime import run_emulated_parallel_tracer
+from emulated_runtime import run_emulated_parallel_tracer
 from hermes.scripts.segment_correction.output import (
     build_component_start_snapshot_steps,
     build_global_stride_snapshot_steps,

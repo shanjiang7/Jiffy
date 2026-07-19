@@ -40,7 +40,7 @@ PLANNER_MODE=exact_dp
 
 for TOL in tol1e4 tol1e7; do
   ROOT=outputs/accuracy_hybrid_${TOL}_h30
-  CFG=configs/hybrid_spiral_raster_${TOL}_lookup10.ini
+  CFG=configs/dev/hybrid_spiral_raster_${TOL}_lookup10.ini
 
   if [ ! -d "${ROOT}/serial/snapshots_ser" ]; then
     echo "======================================================"

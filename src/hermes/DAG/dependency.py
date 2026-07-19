@@ -4,7 +4,7 @@ Thermal dependency model and supersegment DAG construction.
 Public API
 ----------
 AABB, DependencyModel, REpsLookup, LookupRuntime
-build_r_eps_lookup, build_r_eps_lookup_analytical, build_r_eps_lookup_numerical
+build_r_eps_lookup, build_r_eps_lookup_numerical
 write_r_eps_lookup_csv
 aabb_distance_nd, aabb_distance_m
 build_supersegment_dependency_edges
@@ -13,7 +13,6 @@ build_adjacency
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from functools import lru_cache
 import hashlib
 import json
 import math
@@ -22,7 +21,6 @@ from typing import List
 
 import numpy as np
 
-from hermes.DAG.solution import EagarTsai
 from hermes.utils.dag_utils import Edge
 from hermes.utils.segment_types import Segment, SuperSegment
 
@@ -290,18 +288,10 @@ def build_r_eps_lookup(
     V_mps: float,
     P_W: float,
     max_steps: int,
-    backend: str = "analytical",
+    backend: str = "numerical",
     runtime: LookupRuntime | None = None,
 ) -> REpsLookup:
     backend_norm = str(backend).strip().lower()
-    if backend_norm == "analytical":
-        return build_r_eps_lookup_analytical(
-            model=model,
-            dt_s=dt_s,
-            V_mps=V_mps,
-            P_W=P_W,
-            max_steps=max_steps,
-        )
     if backend_norm == "numerical":
         return build_r_eps_lookup_numerical(
             model=model,
@@ -311,56 +301,7 @@ def build_r_eps_lookup(
             max_steps=max_steps,
             runtime=runtime,
         )
-    raise ValueError(f"Unsupported lookup backend {backend!r}; expected 'analytical' or 'numerical'.")
-
-
-def build_r_eps_lookup_analytical(
-    *,
-    model: DependencyModel,
-    dt_s: float,
-    V_mps: float,
-    P_W: float,
-    max_steps: int,
-) -> REpsLookup:
-    """
-    Build the r_eps lookup table using the EagarTsai analytical solver.
-
-    Uses a persistent disk cache mapping physical parameters to `.hermes_cache`
-    to skip re-computing the multi-step diffusion simulation.
-    """
-    params = {
-        "dt_s": float(dt_s),
-        "level_K": float(model.level_K),
-        "resolution_m": float(model.resolution_m),
-        "bc": str(model.bc),
-        "spacing_m": float(model.spacing_m),
-        "V_mps": float(V_mps),
-        "P_W": float(P_W),
-        "window_x_um": int(model.window_x_um),
-        "window_y_um": int(model.window_y_um),
-        "window_z_um": int(model.window_z_um),
-        "max_steps": int(max_steps),
-    }
-    
-    param_str = json.dumps(params, sort_keys=True)
-    h = hashlib.md5(param_str.encode("utf-8")).hexdigest()
-
-    cache_dir = Path(".hermes_cache").expanduser().resolve()
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / f"r_eps_{h}.npy"
-    
-    if cache_file.exists():
-        r_eps = tuple(float(x) for x in np.load(cache_file))
-    else:
-        r_eps = _r_eps_cached(**params)
-        np.save(cache_file, np.array(r_eps, dtype=float))
-
-    return REpsLookup(
-        dt_s=float(dt_s),
-        V_mps=float(V_mps),
-        P_W=float(P_W),
-        r_eps_m=r_eps,
-    )
+    raise ValueError(f"Unsupported lookup backend {backend!r}; only 'numerical' is supported.")
 
 
 def _build_lookup_rc(
@@ -653,48 +594,6 @@ def build_r_eps_lookup_numerical(
 
 
 
-@lru_cache(maxsize=128)
-def _r_eps_cached(
-    dt_s: float,
-    level_K: float, resolution_m: float, bc: str, spacing_m: float,
-    V_mps: float, P_W: float,
-    window_x_um: int, window_y_um: int, window_z_um: int,
-    max_steps: int,
-) -> tuple[float, ...]:
-    if not np.isfinite(dt_s) or dt_s <= 0.0:
-        raise ValueError(f"dt_s must be finite and > 0; got {dt_s!r}")
-    if max_steps < 0:
-        raise ValueError("max_steps must be >= 0")
-
-    V, P = float(V_mps), float(P_W)
-    seg_len = V * dt_s
-    line = EagarTsai(
-        resolution=float(resolution_m), V=V, bc=str(bc), spacing=float(spacing_m),
-        depth=float(window_z_um) * 1e-6,
-        x_min=-(float(window_x_um) * 0.5e-6), x_max=+(float(window_x_um) * 0.5e-6),
-        y_min=-(float(window_y_um) * 0.5e-6), y_max=+(float(window_y_um) * 0.5e-6),
-        init_location=(-0.5 * seg_len, 0.0),
-    )
-    line.forward(dt_s, 0.0, V=V, P=P)
-
-    xs, ys = np.asarray(line.xs, dtype=float), np.asarray(line.ys, dtype=float)
-    X, Y = np.meshgrid(xs, ys, indexing="ij")
-    R = np.sqrt(X * X + Y * Y)
-    z_top = -1
-
-    r_eps = np.zeros(max_steps + 1, dtype=float)
-    for k in range(max_steps + 1):
-        if k > 0:
-            line.forward_diffuse_only(dt_s, 0.0, V=V, P=P)
-        delta = np.asarray(line.theta[:, :, z_top], dtype=float) - 300.0
-        mask = delta >= float(level_K)
-        r_eps[k] = float(np.max(R[mask])) if np.any(mask) else 0.0
-        if k > 0 and float(r_eps[k]) == 0.0:
-            break
-
-    return tuple(float(x) for x in r_eps.tolist())
-
-
 def write_r_eps_lookup_csv(lookup: REpsLookup, out_csv) -> Path:
     """Write lookup table to CSV: idx, time_s, r_eps_m."""
     out_path = Path(out_csv).expanduser().resolve()
@@ -913,92 +812,6 @@ def _build_edges_chords(
     return [Edge(src=a, dst=b) for a, b in sorted(edges_set)]
 
 
-def compute_path_complexity_amplification(
-    supersegments: List[SuperSegment],
-    *,
-    model: DependencyModel,
-    lookup: REpsLookup,
-    back_window: int = 100,
-) -> dict:
-    """
-    Compute a conservative path-density amplification factor.
-
-    A_path = max_j |{i < j : d_ij <= r_eps(tau_ij)}|
-
-    The check mirrors ``build_supersegment_dependency_edges`` but counts
-    segment-level predecessors instead of emitting supersegment edges.  The
-    configured ``back_window`` bounds the thermal memory window, so A_path is
-    the maximum count inside that modeled history horizon.
-    """
-    seg_list: List[tuple[int, Segment]] = [
-        (int(ss.id), seg)
-        for ss in supersegments
-        for seg in ss.segments
-    ]
-    n = len(seg_list)
-    if n == 0:
-        return {
-            "A_path": 0,
-            "num_segments": 0,
-            "argmax_segment_index": None,
-            "argmax_supersegment_id": None,
-            "mean_predecessors_within_radius": 0.0,
-            "back_window_segments": int(max(1, int(back_window))),
-            "level_K": float(model.level_K),
-        }
-
-    back_window = max(1, int(back_window))
-    source_bounds_nd = [seg.path_bounds_nd for _, seg in seg_list]
-    source_end_s = [float(seg.t_start_s + seg.duration_s) for _, seg in seg_list]
-    target_samples_nd = [
-        _segment_target_patch_samples_nd(
-            seg,
-            len_scale=float(model.len_scale),
-            step_stride=int(model.target_patch_step_stride),
-        )
-        for _, seg in seg_list
-    ]
-    counts = np.zeros(n, dtype=np.int64)
-
-    for j in range(n):
-        _, seg_j = seg_list[j]
-        if seg_j.power_W == 0.0:
-            continue
-        target_samples_j = target_samples_nd[j]
-        count_j = 0
-        for i in range(max(0, j - back_window), j):
-            _, seg_i = seg_list[i]
-            if seg_i.power_W == 0.0:
-                continue
-            src_bounds_i = source_bounds_nd[i]
-            seg_i_end_s = source_end_s[i]
-            for local_elapsed_s, target_patch_nd in target_samples_j:
-                elapsed_s = max(0.0, seg_j.t_start_s + local_elapsed_s - seg_i_end_s)
-                dt_idx = max(0, min(int(elapsed_s / lookup.dt_s), len(lookup.r_eps_m) - 1))
-                d_m = aabb_distance_m(
-                    target_patch_nd,
-                    src_bounds_i,
-                    len_scale=float(model.len_scale),
-                )
-                if d_m <= float(lookup.at(dt_idx)):
-                    count_j += 1
-                    break
-        counts[j] = int(count_j)
-
-    argmax_idx = int(np.argmax(counts)) if n > 0 else 0
-    max_count = int(counts[argmax_idx]) if n > 0 else 0
-    argmax_ss_id = int(seg_list[argmax_idx][0]) if n > 0 else None
-    return {
-        "A_path": int(max_count),
-        "num_segments": int(n),
-        "argmax_segment_index": int(argmax_idx),
-        "argmax_supersegment_id": argmax_ss_id,
-        "mean_predecessors_within_radius": float(np.mean(counts)) if n > 0 else 0.0,
-        "back_window_segments": int(back_window),
-        "level_K": float(model.level_K),
-    }
-
-
 def compute_edge_indegree_summary(
     edges: List[Edge],
     num_supersegments: int,
@@ -1009,10 +822,8 @@ def compute_edge_indegree_summary(
     A_path = max in-degree = the largest number of retained source segments
     whose influence superposes on a single target — the amplification factor
     used to split a global error budget across simultaneous sub-epsilon
-    neglects. Unlike the legacy ``compute_path_complexity_amplification``
-    (an AABB-based re-scan), this measures the graph the pipeline actually
-    corrects along, so the factor is consistent with the configured pair test
-    and lookup source.
+    neglects. Measured on the graph the pipeline actually corrects along, so
+    the factor is consistent with the configured pair test and lookup source.
     """
     n = int(num_supersegments)
     counts = np.zeros(max(1, n), dtype=np.int64)
@@ -1054,11 +865,11 @@ def build_adjacency(
 __all__ = [
     "AABB",
     "DependencyModel", "REpsLookup", "LookupRuntime",
-    "build_r_eps_lookup", "build_r_eps_lookup_analytical", "build_r_eps_lookup_numerical",
+    "build_r_eps_lookup", "build_r_eps_lookup_numerical",
     "write_r_eps_lookup_csv",
     "aabb_distance_nd", "aabb_distance_m",
     "calibration_epsilon_for_rel_l2", "calibration_rel_l2_for_epsilon",
-    "build_supersegment_dependency_edges", "compute_path_complexity_amplification",
+    "build_supersegment_dependency_edges",
     "compute_edge_indegree_summary",
     "build_adjacency",
 ]

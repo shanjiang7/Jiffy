@@ -43,9 +43,9 @@ for TOL in tol1e4 tol1e7; do
 
   for SRC in chord src10; do
     if [ "${SRC}" = "chord" ]; then
-      CFG=configs/hybrid_spiral_raster_${TOL}.ini
+      CFG=configs/accuracy/hybrid_spiral_raster_${TOL}.ini
     else
-      CFG=configs/hybrid_spiral_raster_${TOL}_lookup10.ini
+      CFG=configs/dev/hybrid_spiral_raster_${TOL}_lookup10.ini
     fi
     if [ -f "${ROOT}/compare_par32_${SRC}/comparison_summary.json" ]; then
       echo " [$(date)] hybrid/${TOL}/par32-${SRC}: already done, skipping"

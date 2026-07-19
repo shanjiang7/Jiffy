@@ -47,9 +47,9 @@ PLANNER_MODE=exact_dp
 for P in hybrid bull; do
   ROOT=outputs/accuracy_${P}_tol1e4_h30
   if [ "$P" = "hybrid" ]; then
-    CFG=configs/hybrid_spiral_raster_tol1e4.ini
+    CFG=configs/accuracy/hybrid_spiral_raster_tol1e4.ini
   else
-    CFG=configs/examples/bull_tol1e4.ini
+    CFG=configs/accuracy/bull_tol1e4.ini
   fi
 
   if [ ! -d "${ROOT}/serial/snapshots_ser" ]; then

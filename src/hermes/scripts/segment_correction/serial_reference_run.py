@@ -1,7 +1,7 @@
 """
 Independent serial reference run.
 
-Unlike serial_run.py, this script does not rebuild the runtime component plan.
+True sequential ground-truth solve (no runtime component plan involved).
 It executes the original laser path sequentially, grouped only by layer, so the
 saved serial snapshots are independent of DAG/component partitioning choices
 such as dependency level_K, planner mode, or grouping parameters.
@@ -56,7 +56,7 @@ def parse_args(argv=None):
     p.add_argument(
         "--boundary-visualization-json",
         help=(
-            "Metadata JSON produced by serial_emulated_run.py "
+            "Metadata JSON produced by dev/serial_emulated_run.py "
             "--boundary-correction-snapshot-mode. When provided, only the matching "
             "boundary window is saved."
         ),
