@@ -96,44 +96,6 @@ def build_global_stride_snapshot_steps(
     return snapshot_steps_by_component
 
 
-def build_corrected_component_snapshot_steps(
-    path_defs,
-    *,
-    ss_per_layer: int,
-    interval_steps: int,
-    steps_per_ss: int,
-    correction_horizon_ss_map: dict[int, int] | None = None,
-    tail_ss: int = 2,
-) -> dict[int, list[int]]:
-    if interval_steps <= 0:
-        raise ValueError("interval_steps must be >= 1")
-    if int(ss_per_layer) < 1:
-        raise ValueError("ss_per_layer must be >= 1")
-    if int(steps_per_ss) < 1:
-        raise ValueError("steps_per_ss must be >= 1")
-    if int(tail_ss) < 0:
-        raise ValueError("tail_ss must be >= 0")
-
-    snapshot_steps_by_component: dict[int, list[int]] = {}
-    acc_ss = 0
-    for pd in path_defs:
-        has_pred = (int(acc_ss) % int(ss_per_layer)) != 0
-        if has_pred:
-            horizon_ss = 1
-            if correction_horizon_ss_map is not None:
-                horizon_ss = max(0, int(correction_horizon_ss_map.get(int(pd.component_id), 1)))
-            horizon_steps = (int(horizon_ss) + int(tail_ss)) * int(steps_per_ss)
-            if horizon_steps <= 0:
-                acc_ss += int(pd.weight)
-                continue
-            rel_steps = list(range(0, int(horizon_steps), int(interval_steps)))
-            if not rel_steps:
-                rel_steps = [0]
-            snapshot_steps_by_component[int(pd.component_id)] = rel_steps
-        acc_ss += int(pd.weight)
-    return snapshot_steps_by_component
-
-
 def position_after_steps(path_def, n_steps: int) -> tuple[float, float]:
     steps_left = max(0, min(int(n_steps), int(path_def.total_steps)))
     x = float(path_def.x_start)

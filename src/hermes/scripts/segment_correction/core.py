@@ -28,10 +28,6 @@ def _build_predecessor_map(
     return pred
 
 
-def _build_successor_map(pred_map: Dict[int, int | None]) -> Dict[int, int]:
-    return {int(pred): int(comp) for comp, pred in pred_map.items() if pred is not None}
-
-
 def _legacy_component_predecessors(
     path_defs: List[PathDef],
     ss_per_layer: int,
@@ -161,23 +157,6 @@ def _snapshot_steps_for_component(
     return list(snapshot_steps_by_component.get(int(component_id), []))
 
 
-def _superpose_snapshots(
-    base_snaps: List[np.ndarray],
-    delta_snaps: List[np.ndarray],
-) -> List[np.ndarray]:
-    if not base_snaps:
-        return []
-    if not delta_snaps:
-        return list(base_snaps)
-    final_snaps: List[np.ndarray] = []
-    for snap_idx, base_snap in enumerate(base_snaps):
-        if int(snap_idx) < len(delta_snaps):
-            final_snaps.append(base_snap + delta_snaps[int(snap_idx)])
-        else:
-            final_snaps.append(base_snap)
-    return final_snaps
-
-
 def _superpose_correction_lists(
     base_snaps: List[np.ndarray],
     correction_lists: List[List[np.ndarray]],
@@ -191,40 +170,6 @@ def _superpose_correction_lists(
                 break
             final_snaps[int(snap_idx)] = final_snaps[int(snap_idx)] + delta_snap
     return final_snaps
-
-
-def _correction_stats(
-    base_snaps: List[np.ndarray],
-    delta_snaps: List[np.ndarray],
-) -> dict[str, float]:
-    if not delta_snaps:
-        return {
-            "num_snaps": 0.0,
-            "max_abs": 0.0,
-            "max_delta_l2": 0.0,
-            "max_rel_l2_vs_base": 0.0,
-        }
-
-    max_abs = 0.0
-    max_delta_l2 = 0.0
-    max_rel_l2_vs_base = 0.0
-    for snap_idx, delta_snap in enumerate(delta_snaps):
-        delta64 = delta_snap.astype(np.float64, copy=False)
-        delta_l2 = float(np.linalg.norm(delta64))
-        max_delta_l2 = max(max_delta_l2, delta_l2)
-        max_abs = max(max_abs, float(np.max(np.abs(delta64))))
-        if snap_idx < len(base_snaps):
-            base64 = base_snaps[snap_idx].astype(np.float64, copy=False)
-            base_l2 = float(np.linalg.norm(base64))
-            if base_l2 > 0.0:
-                max_rel_l2_vs_base = max(max_rel_l2_vs_base, delta_l2 / base_l2)
-
-    return {
-        "num_snaps": float(len(delta_snaps)),
-        "max_abs": float(max_abs),
-        "max_delta_l2": float(max_delta_l2),
-        "max_rel_l2_vs_base": float(max_rel_l2_vs_base),
-    }
 
 
 def _delta_max_abs_series(
@@ -243,22 +188,6 @@ def _delta_max_abs_series(
         max_abs = float(np.max(np.abs(delta_snap.astype(np.float64, copy=False))))
         series.append((step, max_abs))
     return series
-
-
-def _print_delta_max_abs_series(
-    *,
-    prefix: str,
-    delta_snaps: List[np.ndarray],
-    rel_snapshot_steps: list[int] | None,
-    deltaT_K: float = 1.0,
-) -> None:
-    series = _delta_max_abs_series(delta_snaps, rel_snapshot_steps)
-    if not series:
-        return
-    formatted = ", ".join(
-        f"{step}:{value * float(deltaT_K):.4e}" for step, value in series
-    )
-    print(f"{prefix} max|delta|_K by step [{formatted}]", flush=True)
 
 
 def _chunk_snapshots_by_bytes(

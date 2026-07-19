@@ -33,7 +33,7 @@ from hermes.utils.path_utils import resolve_path
 from hermes.physics.material import phys_parameter
 from hermes.runtime.config import load_config
 from hermes.scheduling.planning import build_runtime_plan
-from hermes.scripts.segment_correction.outer_serial import run_sequential_outer
+from outer_serial import run_sequential_outer
 from hermes.scripts.segment_correction.output import (
     build_component_start_snapshot_steps,
     build_global_stride_snapshot_steps,
