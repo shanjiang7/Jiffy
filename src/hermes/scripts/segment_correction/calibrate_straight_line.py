@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 import cupy as cp
 import numpy as np
@@ -46,11 +45,9 @@ from hermes.DAG.dependency import (
     CALIBRATION_REL_L2,
 )
 from hermes.motion.types import PathLeg
-from hermes.physics.material import phys_parameter
-from hermes.runtime.config import load_config
+from hermes.runtime.setup import load_sim_setup, select_float_type
 from hermes.scripts.outer_solver import build_outer_context, run_ss_outer
 from hermes.utils.mpi_utils import bind_local_gpu
-from hermes.utils.path_utils import resolve_path
 from hermes.utils.snapshot_utils import crop_snapshot
 
 
@@ -114,8 +111,12 @@ def _simulate_final_state(
 def main(argv=None):
     bind_local_gpu()
     args = parse_args(argv)
-    project_root = Path(__file__).resolve().parents[4]
-    config_path = resolve_path(project_root, args.config, "configs/examples/sim_calibration.ini")
+    setup = load_sim_setup(
+        args.config, dt_us=args.dt_us, default_config="configs/examples/sim_calibration.ini"
+    )
+    project_root, config_path = setup.project_root, setup.config_path
+    rc, phys, dt_s = setup.rc, setup.phys, setup.dt_s
+    float_type = select_float_type(rc)
     out_dir = (project_root / args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -123,14 +124,7 @@ def main(argv=None):
     if not lseg_list_mm:
         raise ValueError("--lseg-mm produced an empty sweep.")
 
-    rc = load_config(config_path)
-    float_type = cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
-    mat_override = rc.material.to_override_dict()
-    t_spot_on = 2.0 * rc.laser.x_span_m / rc.laser.v
-    phys = phys_parameter(rc.laser.Q, rc.laser.x_span_m, t_spot_on, mat_ch=mat_override)
-
-    dt_s = float(args.dt_us) * 1e-6
-    dt_nd = dt_s / phys.time_scale
+    dt_nd = setup.dt_nd
     ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
     n_all = ctx.nx * ctx.ny * ctx.nz
     h_m = float(rc.level3.h_tuple[0])

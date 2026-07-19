@@ -13,15 +13,13 @@ import json
 import sys
 import time
 from collections import defaultdict
-from pathlib import Path
 
 import cupy as cp
 import numpy as np
 
-from hermes.physics.material import phys_parameter
 from hermes.pipelines.config import PipelineConfig
 from hermes.pipelines.ss_builder import build_ss_from_cfg
-from hermes.runtime.config import load_config
+from hermes.runtime.setup import load_sim_setup, select_float_type
 from hermes.scripts.outer_solver import build_outer_context, run_ss_outer
 from hermes.utils.dag_utils import Component
 from hermes.utils.mpi_utils import bind_local_gpu
@@ -114,17 +112,6 @@ def _build_supersegment_components(*, num_layers: int, ss_per_layer: int) -> lis
     return comps
 
 
-def _compute_reference_dt_s(args, rc) -> float:
-    if args.dt_us is not None:
-        return float(args.dt_us) * 1e-6
-    if rc.time.dt is not None:
-        return float(rc.time.dt)
-    raise ValueError(
-        "Independent serial reference does not fall back to [time].CFL. "
-        "Pass --dt-us explicitly or set [time].dt in the sim config."
-    )
-
-
 def _build_layer_snapshot_steps_by_supersegment(
     layer_defs,
     *,
@@ -180,9 +167,11 @@ def main(argv=None):
     bind_local_gpu()
 
     args = parse_args(argv)
-    project_root = Path(__file__).resolve().parents[4]
+    setup = load_sim_setup(args.config, dt_us=args.dt_us, allow_cfl=False)
+    project_root, config_path = setup.project_root, setup.config_path
+    rc, phys, dt_s = setup.rc, setup.phys, setup.dt_s
+    float_type = select_float_type(rc)
 
-    config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
     boundary_viz = None
@@ -191,15 +180,7 @@ def main(argv=None):
         with open(boundary_viz_path, "r", encoding="utf-8") as f:
             boundary_viz = json.load(f)
 
-    rc = load_config(config_path)
-    float_type = cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
-
-    mat_override = rc.material.to_override_dict()
-    t_spot_on = 2.0 * rc.laser.x_span_m / rc.laser.v
-    phys = phys_parameter(rc.laser.Q, rc.laser.x_span_m, t_spot_on, mat_ch=mat_override)
-    dt_s = _compute_reference_dt_s(args, rc)
-
-    dt_nd = dt_s / phys.time_scale
+    dt_nd = setup.dt_nd
     ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
     n_all = ctx.nx * ctx.ny * ctx.nz
 

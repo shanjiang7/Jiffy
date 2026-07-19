@@ -68,16 +68,6 @@ def rel_l2(a: np.ndarray, b: np.ndarray, eps: float = 1e-30) -> float:
     return float(np.linalg.norm(diff) / max(denom, eps))
 
 
-def _compute_dt_s(args, rc, phys) -> float:
-    if args.dt_us is not None:
-        return float(args.dt_us) * 1e-6
-    if rc.time.CFL is not None:
-        return (float(rc.time.CFL) * (float(rc.level1.h_tuple[0]) ** 2)) / float(phys.kappa)
-    if rc.time.dt is not None:
-        return float(rc.time.dt)
-    raise ValueError("Need --dt-us or [time].CFL/[time].dt in the simulation config.")
-
-
 def _build_source_on_ranges_by_layer(
     *,
     config_path: Path,
@@ -85,20 +75,12 @@ def _build_source_on_ranges_by_layer(
     dt_us: float | None,
     num_layers: int | None,
 ) -> dict[int, list[tuple[int, int]]]:
-    from hermes.physics.material import phys_parameter
     from hermes.pipelines.config import PipelineConfig
     from hermes.pipelines.ss_builder import build_ss_from_cfg
-    from hermes.runtime.config import load_config
+    from hermes.runtime.setup import load_sim_setup
 
-    rc = load_config(config_path)
-    phys = phys_parameter(
-        rc.laser.Q,
-        rc.laser.x_span_m,
-        2.0 * rc.laser.x_span_m / rc.laser.v,
-        mat_ch=rc.material.to_override_dict(),
-    )
-    args = argparse.Namespace(dt_us=dt_us)
-    dt_s = _compute_dt_s(args, rc, phys)
+    setup = load_sim_setup(config_path, dt_us=dt_us)
+    rc, dt_s = setup.rc, setup.dt_s
 
     pipeline_cfg = PipelineConfig.from_ini(path_config_path, num_layers=num_layers)
     pipeline_cfg = pipeline_cfg.with_solver_motion(dt_s=dt_s, solver_velocity_mps=rc.laser.v)

@@ -1,32 +1,24 @@
 from __future__ import annotations
 
 """
-PROJECT_DIR=/scratch/10226/shawnraul/Parallel_Hermes
-cd "${PROJECT_DIR}"
-export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
+Planning-only preview: build the dependency DAG and rank partition without
+solving. Usage (from the repo root, after `source env_vista.sh`):
 
 python src/hermes/scripts/segment_correction/plan_only.py \
   --config configs/examples/sim_ex1.ini \
   --path-config configs/examples/fast_heat.ini \
-  --dt-us 10 \
-  --world-size 4 \
-  --planner-mode exact_dp \
-  --out-dir outputs/plan_nosplit
+  --dt-us 10 --world-size 4 --planner-mode exact_dp
 """
 
 import argparse
 import json
 import sys
-from pathlib import Path
 
-import cupy as cp
 
-from hermes.physics.material import phys_parameter
-from hermes.runtime.config import load_config
+from hermes.runtime.setup import load_sim_setup, select_float_type
 from hermes.scheduling.planning import (
     build_runtime_plan,
     build_planning_summary,
-    compute_dt_s,
     print_run_summary,
     print_split_records,
 )
@@ -116,8 +108,11 @@ def main(argv=None):
     if int(args.world_size) < 1:
         raise ValueError("--world-size must be >= 1")
 
-    project_root = Path(__file__).resolve().parents[4]
-    config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
+    setup = load_sim_setup(args.config, dt_us=args.dt_us)
+    project_root, config_path = setup.project_root, setup.config_path
+    rc, phys, dt_s = setup.rc, setup.phys, setup.dt_s
+    float_type = select_float_type(rc)
+
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
     if bool(args.path_complexity):
@@ -127,14 +122,6 @@ def main(argv=None):
         args.path_complexity_target_rel_l2 = float(pc_options.target_rel_l2)
         args.path_complexity_config_path = str(pc_config_path)
         print(f"path-complexity config: {pc_config_path}")
-
-    rc = load_config(config_path)
-    float_type = cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
-
-    mat_override = rc.material.to_override_dict()
-    t_spot_on = 2.0 * rc.laser.x_span_m / rc.laser.v
-    phys = phys_parameter(rc.laser.Q, rc.laser.x_span_m, t_spot_on, mat_ch=mat_override)
-    dt_s = compute_dt_s(args, rc, phys)
 
     print("=== Planning-Only Segment Correction Preview ===")
     print(f"world_size (emulated ranks): {args.world_size}")

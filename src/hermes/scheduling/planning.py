@@ -3,16 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from hermes.scheduling._partitioned import build_partitioned_runtime_plan
+from hermes.runtime.setup import compute_dt_s as _compute_dt_s
 
 
 def compute_dt_s(args, rc, phys) -> float:
-    if args.dt_us is not None:
-        return float(args.dt_us) * 1e-6
-    if rc.time.CFL is not None:
-        return (rc.time.CFL * (rc.level1.h_tuple[0] ** 2)) / phys.kappa
-    if rc.time.dt is not None:
-        return rc.time.dt
-    raise ValueError("Need either [time].CFL or [time].dt in sim config.")
+    return _compute_dt_s(rc, phys, dt_us=args.dt_us)
 
 
 def predicted_skew(rank_pred_loads) -> float:

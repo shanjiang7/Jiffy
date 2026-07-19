@@ -13,12 +13,10 @@ import cupy as cp
 
 from hermes.utils.mpi_utils import mpi_context, bind_local_gpu
 from hermes.utils.path_utils import resolve_path
-from hermes.physics.material import phys_parameter
-from hermes.runtime.config import load_config
+from hermes.runtime.setup import load_sim_setup, select_float_type
 from hermes.scheduling.planning import (
     build_planning_summary,
     build_runtime_plan,
-    compute_dt_s,
     print_run_summary,
     print_split_records,
 )
@@ -416,9 +414,10 @@ def main(argv=None):
     bind_local_gpu()
 
     args = parse_args(argv)
-    project_root = Path(__file__).resolve().parents[4]
+    setup = load_sim_setup(args.config, dt_us=args.dt_us)
+    project_root, config_path = setup.project_root, setup.config_path
+    rc, phys, dt_s = setup.rc, setup.phys, setup.dt_s
 
-    config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
 
@@ -453,16 +452,10 @@ def main(argv=None):
                 f"snap_every_steps={diagnostic_options.snap_every_steps}"
             )
 
-    rc = load_config(config_path)
     print(_rank_device_info(rank), flush=True)
-    float_type = cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
+    float_type = select_float_type(rc)
 
-    mat_override = rc.material.to_override_dict()
-    t_spot_on = 2.0 * rc.laser.x_span_m / rc.laser.v
-    phys = phys_parameter(rc.laser.Q, rc.laser.x_span_m, t_spot_on, mat_ch=mat_override)
-    dt_s = compute_dt_s(args, rc, phys)
-
-    dt_nd = dt_s / phys.time_scale
+    dt_nd = setup.dt_nd
     ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
     n_all = ctx.nx * ctx.ny * ctx.nz
     production_out_dir = out_dir / "diagnostic_normal" if diagnostic_options is not None else out_dir
