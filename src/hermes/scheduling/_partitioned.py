@@ -191,44 +191,11 @@ def _build_dag_stage(
     )
 
 
-def _build_exact_dp_stage(
-    *,
-    world_size: int,
-    correction_weight: float,
-    dag_stage: DAGStageResult,
-    verify_dp_monotonicity: bool,
-) -> tuple[dict, dict[int, tuple[int, int] | None]]:
-    partition_summary = partition_supersegments_exact_dp(
-        int(dag_stage.n_ss),
-        edge_pairs=dag_stage.edge_pairs,
-        num_processors=int(world_size),
-        segments_per_supersegment=1,
-        correction_weight=float(correction_weight),
-        cut_depths=dag_stage.cut_depths,
-        verify_monotonicity=bool(verify_dp_monotonicity),
-    )
-    rank_ranges = _uniform_rank_ranges(partition_summary, int(world_size))
-    return partition_summary, rank_ranges
-
-
-def _build_monotone_dp_stage(
-    *,
-    world_size: int,
-    correction_weight: float,
-    dag_stage: DAGStageResult,
-    verify_dp_monotonicity: bool,
-) -> tuple[dict, dict[int, tuple[int, int] | None]]:
-    partition_summary = partition_supersegments_monotone_dp(
-        int(dag_stage.n_ss),
-        edge_pairs=dag_stage.edge_pairs,
-        num_processors=int(world_size),
-        segments_per_supersegment=1,
-        correction_weight=float(correction_weight),
-        cut_depths=dag_stage.cut_depths,
-        verify_monotonicity=bool(verify_dp_monotonicity),
-    )
-    rank_ranges = _uniform_rank_ranges(partition_summary, int(world_size))
-    return partition_summary, rank_ranges
+# DP planners share one call signature; "uniform" differs (no monotonicity check).
+_DP_PARTITIONERS = {
+    "exact_dp": partition_supersegments_exact_dp,
+    "dp_monotonicity": partition_supersegments_monotone_dp,
+}
 
 
 def _uniform_rank_ranges(partition_summary: dict, world_size: int) -> dict[int, tuple[int, int] | None]:
@@ -251,7 +218,8 @@ def _build_partition_stage(
     verify_dp_monotonicity: bool,
 ) -> tuple[dict, dict[int, tuple[int, int] | None]]:
     partition_t0 = time.perf_counter()
-    if str(planner_mode) == "uniform":
+    mode = str(planner_mode)
+    if mode == "uniform":
         partition_summary = direct_partition_dag_n1(
             int(dag_stage.n_ss),
             dag_stage.edge_pairs,
@@ -259,36 +227,24 @@ def _build_partition_stage(
             correction_weight=float(correction_weight),
             cut_depths=dag_stage.cut_depths,
         )
-        partition_summary["partition_mode"] = str(planner_mode)
-        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
-        return partition_summary, _uniform_rank_ranges(partition_summary, int(world_size))
-
-    if str(planner_mode) == "exact_dp":
-        partition_summary, rank_ranges = _build_exact_dp_stage(
-            world_size=int(world_size),
+    elif mode in _DP_PARTITIONERS:
+        partition_summary = _DP_PARTITIONERS[mode](
+            int(dag_stage.n_ss),
+            edge_pairs=dag_stage.edge_pairs,
+            num_processors=int(world_size),
+            segments_per_supersegment=1,
             correction_weight=float(correction_weight),
-            dag_stage=dag_stage,
-            verify_dp_monotonicity=bool(verify_dp_monotonicity),
+            cut_depths=dag_stage.cut_depths,
+            verify_monotonicity=bool(verify_dp_monotonicity),
         )
-        partition_summary["partition_mode"] = str(planner_mode)
-        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
-        return partition_summary, rank_ranges
-
-    if str(planner_mode) == "dp_monotonicity":
-        partition_summary, rank_ranges = _build_monotone_dp_stage(
-            world_size=int(world_size),
-            correction_weight=float(correction_weight),
-            dag_stage=dag_stage,
-            verify_dp_monotonicity=bool(verify_dp_monotonicity),
+    else:
+        raise ValueError(
+            f"Unknown planner_mode '{planner_mode}', expected 'uniform', 'exact_dp', "
+            "or 'dp_monotonicity'."
         )
-        partition_summary["partition_mode"] = str(planner_mode)
-        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
-        return partition_summary, rank_ranges
-
-    raise ValueError(
-        f"Unknown planner_mode '{planner_mode}', expected 'uniform', 'exact_dp', "
-        "or 'dp_monotonicity'."
-    )
+    partition_summary["partition_mode"] = mode
+    partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
+    return partition_summary, _uniform_rank_ranges(partition_summary, int(world_size))
 
 
 def _build_runtime_components_and_assignments(

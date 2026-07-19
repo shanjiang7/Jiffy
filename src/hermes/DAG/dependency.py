@@ -619,12 +619,15 @@ def build_supersegment_dependency_edges(
     Build directed dependency edges (src=SS_i → dst=SS_j) between SuperSegments
     using segment-level precision.
 
-    Iterates over individual Segments internally; for each segment j, checks the
-    back_window previous segments using per-segment AABBs and elapsed times.
-    Any segment pair from different SSes that meets the thermal proximity condition
-    produces an SS-level edge.  Duplicate (SS_i, SS_j) pairs are deduplicated.
+    Flattens the supersegments to time-ordered Segments and dispatches on
+    ``model.pair_test``: "chords" (exact chord-to-chord distances with
+    per-chord deposit times) or "aabb" (published bounding-box test). Any
+    segment pair from different SSes meeting the thermal proximity condition
+    produces one deduplicated SS-level edge.
 
-    back_window : maximum number of previous *segments* to check (not SSes).
+    back_window : maximum number of previous *segments* to check (not SSes);
+    the chords test treats it as an initial estimate and extends it to the
+    lookup's physical thermal horizon.
     """
     # Flatten to (ss_id, Segment) in time order
     seg_list: List[tuple[int, Segment]] = [
@@ -636,13 +639,30 @@ def build_supersegment_dependency_edges(
     if n == 0:
         return []
     back_window = max(1, int(back_window))
-    if str(getattr(model, "pair_test", "aabb")).strip().lower() == "chords":
-        return _build_edges_chords(
-            seg_list,
-            model=model,
-            lookup=lookup,
-            back_window=back_window,
-        )
+    pair_test = str(getattr(model, "pair_test", "aabb")).strip().lower()
+    builder = {"chords": _build_edges_chords, "aabb": _build_edges_aabb}.get(pair_test)
+    if builder is None:
+        raise ValueError(f"Unknown pair_test {pair_test!r}; expected 'aabb' or 'chords'.")
+    return builder(
+        seg_list,
+        model=model,
+        lookup=lookup,
+        back_window=back_window,
+    )
+
+
+def _build_edges_aabb(
+    seg_list: List[tuple[int, Segment]],
+    *,
+    model: DependencyModel,
+    lookup: REpsLookup,
+    back_window: int,
+) -> List[Edge]:
+    """
+    Published pair test: source AABB vs moving square target patches, elapsed
+    time measured from the source segment END.
+    """
+    n = len(seg_list)
     source_bounds_nd = [seg.path_bounds_nd for _, seg in seg_list]
     source_end_s = [float(seg.t_start_s + seg.duration_s) for _, seg in seg_list]
     target_samples_nd = [
