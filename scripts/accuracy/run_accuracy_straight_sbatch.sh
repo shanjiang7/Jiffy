@@ -19,7 +19,16 @@
 
 set -uo pipefail
 
+# Locate the repo root regardless of where sbatch was invoked from:
+# start at the submit dir and walk up to the directory containing env_vista.sh.
 PROJECT_DIR=${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}
+while [ ! -f "${PROJECT_DIR}/env_vista.sh" ] && [ "${PROJECT_DIR}" != "/" ]; do
+  PROJECT_DIR=$(dirname "${PROJECT_DIR}")
+done
+if [ ! -f "${PROJECT_DIR}/env_vista.sh" ]; then
+  echo "ERROR: could not locate the Jiffy repo root (env_vista.sh) above ${SLURM_SUBMIT_DIR:-$(pwd)}" >&2
+  exit 1
+fi
 cd "${PROJECT_DIR}"
 mkdir -p logs outputs
 
