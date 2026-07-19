@@ -43,6 +43,7 @@ def build_planning_summary(
         "rank_pred_loads": {int(k): float(v) for k, v in runtime_plan["rank_pred_loads"].items()},
         "predicted_skew": float(predicted_skew(runtime_plan["rank_pred_loads"])),
         "steps_per_ss": int(runtime_plan["steps_per_ss"]),
+        "dependency_level_K": float(runtime_plan.get("dependency_level_K", 0.0)),
         "num_layers": int(runtime_plan["num_layers"]),
         "ss_per_layer": int(runtime_plan["ss_per_layer"]),
         "component_predecessors": {
@@ -54,10 +55,22 @@ def build_planning_summary(
             for k, v in runtime_plan.get("component_successors", {}).items()
         },
         "component_dependency_edges": list(runtime_plan.get("component_dependency_edges", [])),
+        "correction_horizon_ss_map": {
+            int(k): int(v)
+            for k, v in runtime_plan.get("correction_horizon_ss_map", {}).items()
+        },
         "partition": runtime_plan["partition_summary"],
     }
     if search_summary is not None:
         summary["auto_search"] = search_summary
+    if bool(getattr(args, "path_complexity", False)):
+        summary["path_complexity_enabled"] = True
+        if hasattr(args, "path_complexity_config_path"):
+            summary["path_complexity_config"] = str(args.path_complexity_config_path)
+    if getattr(args, "dependency_level_K_override", None) is not None:
+        summary["dependency_level_K_override"] = float(args.dependency_level_K_override)
+    if runtime_plan.get("path_complexity") is not None:
+        summary["path_complexity"] = runtime_plan["path_complexity"]
     return summary
 
 
@@ -89,6 +102,9 @@ def build_runtime_plan(
         solver_velocity_mps=float(solver_velocity_mps),
         export_outputs=bool(export_outputs),
         verify_dp_monotonicity=bool(getattr(args, "verify_dp_monotonicity", False)),
+        path_complexity_report=bool(getattr(args, "path_complexity_report", False)),
+        path_complexity_target_rel_l2=getattr(args, "path_complexity_target_rel_l2", None),
+        dependency_level_K_override=getattr(args, "dependency_level_K_override", None),
     )
 
 

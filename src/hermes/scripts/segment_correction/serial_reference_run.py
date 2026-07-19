@@ -31,7 +31,7 @@ from hermes.utils.snapshot_utils import crop_snapshot
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Independent serial reference run")
-    p.add_argument("--config", default="configs/sim_ex1.ini", help="Base simulation config")
+    p.add_argument("--config", default="configs/examples/sim_ex1.ini", help="Base simulation config")
     p.add_argument("--path-config", required=True, help="Laser path config")
     p.add_argument("--out-dir", default="outputs/serial_reference", help="Output directory")
     p.add_argument("--dt-us", type=float, help="Override dt in microseconds")
@@ -182,7 +182,7 @@ def main(argv=None):
     args = parse_args(argv)
     project_root = Path(__file__).resolve().parents[4]
 
-    config_path = resolve_path(project_root, args.config, "configs/sim_ex1.ini")
+    config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
     boundary_viz = None

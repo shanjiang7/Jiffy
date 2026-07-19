@@ -181,7 +181,7 @@ def main():
     )
     ap.add_argument(
         "--config",
-        default="configs/sim_ex1.ini",
+        default="configs/examples/sim_ex1.ini",
         help="Simulation config used to convert ND temperature and spacing",
     )
     ap.add_argument(
@@ -196,7 +196,7 @@ def main():
     )
     ap.add_argument(
         "--path-config",
-        default="configs/fast_heat.ini",
+        default="configs/examples/fast_heat.ini",
         help="Path/DAG config used to reconstruct moving snapshot positions.",
     )
     ap.add_argument(
@@ -258,6 +258,7 @@ def main():
             phys=phys,
             float_type=float_type,
             solver_mode="fused",
+            source_on_steps=pipeline_cfg.dependency.lookup_source_on_steps,
             source_substeps=pipeline_cfg.dependency.mock_numerical_source_steps,
         )
         dag = compute_dag_and_components(pipeline_cfg, lookup_runtime=lookup_runtime)

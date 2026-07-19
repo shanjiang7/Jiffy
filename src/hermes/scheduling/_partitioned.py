@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -129,11 +130,27 @@ def _build_dag_stage(
     solver_velocity_mps: float,
     export_outputs: bool,
     out_dir: Path,
+    path_complexity_report: bool = False,
+    path_complexity_target_rel_l2: float | None = None,
+    dependency_level_K_override: float | None = None,
 ) -> DAGStageResult | None:
     pipeline_cfg = PipelineConfig.from_ini(
         path_config_path,
         num_layers=num_layers_override,
     )
+    if dependency_level_K_override is not None:
+        if float(dependency_level_K_override) <= 0.0:
+            raise ValueError("dependency_level_K_override must be > 0.")
+        pipeline_cfg = replace(
+            pipeline_cfg,
+            dependency=replace(
+                pipeline_cfg.dependency,
+                model=replace(
+                    pipeline_cfg.dependency.model,
+                    level_K=float(dependency_level_K_override),
+                ),
+            ),
+        )
     pipeline_cfg = replace(pipeline_cfg, segments_per_supersegment=1)
     effective_step_nd = pipeline_cfg.compute_effective_motion_step_nd(
         dt_s=dt_s,
@@ -148,9 +165,15 @@ def _build_dag_stage(
         phys=phys,
         float_type=float_type,
         solver_mode=str(solver_mode),
+        source_on_steps=pipeline_cfg.dependency.lookup_source_on_steps,
         source_substeps=pipeline_cfg.dependency.mock_numerical_source_steps,
     )
-    dag_result = compute_dag_and_components(pipeline_cfg, lookup_runtime=lookup_runtime)
+    dag_result = compute_dag_and_components(
+        pipeline_cfg,
+        lookup_runtime=lookup_runtime,
+        path_complexity_report=bool(path_complexity_report),
+        path_complexity_target_rel_l2=path_complexity_target_rel_l2,
+    )
     if dag_result is None:
         return None
 
@@ -227,6 +250,7 @@ def _build_partition_stage(
     dag_stage: DAGStageResult,
     verify_dp_monotonicity: bool,
 ) -> tuple[dict, dict[int, tuple[int, int] | None]]:
+    partition_t0 = time.perf_counter()
     if str(planner_mode) == "uniform":
         partition_summary = direct_partition_dag_n1(
             int(dag_stage.n_ss),
@@ -235,6 +259,8 @@ def _build_partition_stage(
             correction_weight=float(correction_weight),
             cut_depths=dag_stage.cut_depths,
         )
+        partition_summary["partition_mode"] = str(planner_mode)
+        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
         return partition_summary, _uniform_rank_ranges(partition_summary, int(world_size))
 
     if str(planner_mode) == "exact_dp":
@@ -244,6 +270,8 @@ def _build_partition_stage(
             dag_stage=dag_stage,
             verify_dp_monotonicity=bool(verify_dp_monotonicity),
         )
+        partition_summary["partition_mode"] = str(planner_mode)
+        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
         return partition_summary, rank_ranges
 
     if str(planner_mode) == "dp_monotonicity":
@@ -253,6 +281,8 @@ def _build_partition_stage(
             dag_stage=dag_stage,
             verify_dp_monotonicity=bool(verify_dp_monotonicity),
         )
+        partition_summary["partition_mode"] = str(planner_mode)
+        partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)
         return partition_summary, rank_ranges
 
     raise ValueError(
@@ -308,6 +338,9 @@ def build_partitioned_runtime_plan(
     solver_velocity_mps: float,
     export_outputs: bool = True,
     verify_dp_monotonicity: bool = False,
+    path_complexity_report: bool = False,
+    path_complexity_target_rel_l2: float | None = None,
+    dependency_level_K_override: float | None = None,
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),
@@ -320,6 +353,9 @@ def build_partitioned_runtime_plan(
         solver_velocity_mps=float(solver_velocity_mps),
         export_outputs=bool(export_outputs),
         out_dir=out_dir,
+        path_complexity_report=bool(path_complexity_report),
+        path_complexity_target_rel_l2=path_complexity_target_rel_l2,
+        dependency_level_K_override=dependency_level_K_override,
     )
     if dag_stage is None:
         return None
@@ -376,6 +412,7 @@ def build_partitioned_runtime_plan(
         "path_defs": path_defs,
         "rank_assignments": rank_assignments,
         "steps_per_ss": int(dag_stage.dag_result.unit_steps),
+        "dependency_level_K": float(dag_stage.dag_result.dependency_level_K),
         "effective_step_nd": float(dag_stage.effective_step_nd),
         "num_layers": int(dag_stage.dag_result.num_layers),
         "ss_per_layer": int(dag_stage.dag_result.ss_per_layer),
@@ -391,6 +428,7 @@ def build_partitioned_runtime_plan(
         "source_components": list(dag_stage.dag_result.components),
         "split_records": [],
         "segments_per_supersegment": 1,
+        "path_complexity": getattr(dag_stage.dag_result, "path_complexity_summary", None),
     }
 
 

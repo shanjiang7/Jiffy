@@ -6,8 +6,8 @@ cd "${PROJECT_DIR}"
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 
 python src/hermes/scripts/segment_correction/plan_only.py \
-  --config configs/sim_ex1.ini \
-  --path-config configs/fast_heat.ini \
+  --config configs/examples/sim_ex1.ini \
+  --path-config configs/examples/fast_heat.ini \
   --dt-us 10 \
   --world-size 4 \
   --planner-mode exact_dp \
@@ -30,12 +30,13 @@ from hermes.scheduling.planning import (
     print_run_summary,
     print_split_records,
 )
+from hermes.scripts.segment_correction.diagnostic_config import load_path_complexity_options
 from hermes.utils.path_utils import resolve_path
 
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Planning-only preview for segment correction")
-    p.add_argument("--config", default="configs/sim_ex1.ini", help="Base simulation config")
+    p.add_argument("--config", default="configs/examples/sim_ex1.ini", help="Base simulation config")
     p.add_argument("--path-config", required=True, help="DAG laser path config")
     p.add_argument("--out-dir", default="outputs/segment_plan", help="Output directory")
     p.add_argument("--dt-us", type=float, help="Override dt in microseconds")
@@ -82,6 +83,31 @@ def parse_args(argv=None):
             "opt[p][j] <= opt[p][j+1]."
         ),
     )
+    p.add_argument(
+        "--path-complexity",
+        action="store_true",
+        help="Enable path-complexity threshold adjustment using --path-complexity-config.",
+    )
+    p.add_argument(
+        "--path-complexity-config",
+        default="configs/path_complexity.ini",
+        help="INI file with [path_complexity] settings.",
+    )
+    p.add_argument(
+        "--path-complexity-report",
+        action="store_true",
+        help="Compute and print A_path without changing the configured level_K.",
+    )
+    p.add_argument(
+        "--path-complexity-target-rel-l2",
+        type=float,
+        default=None,
+        help=(
+            "Target global relative L2 error. If set, compute A_path, use "
+            "local_target=target/A_path with the built-in calibration table, "
+            "update level_K, and rebuild the DAG."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -91,9 +117,16 @@ def main(argv=None):
         raise ValueError("--world-size must be >= 1")
 
     project_root = Path(__file__).resolve().parents[4]
-    config_path = resolve_path(project_root, args.config, "configs/sim_ex1.ini")
+    config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
+    if bool(args.path_complexity):
+        pc_config_path = resolve_path(project_root, args.path_complexity_config, "configs/path_complexity.ini")
+        pc_options = load_path_complexity_options(pc_config_path)
+        args.path_complexity_report = True
+        args.path_complexity_target_rel_l2 = float(pc_options.target_rel_l2)
+        args.path_complexity_config_path = str(pc_config_path)
+        print(f"path-complexity config: {pc_config_path}")
 
     rc = load_config(config_path)
     float_type = cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
@@ -142,6 +175,52 @@ def main(argv=None):
         global_max_cut_depth=int(runtime_plan.get("global_max_cut_depth", 0)),
     )
     print(f"segments_per_supersegment: {runtime_plan['segments_per_supersegment']}")
+    path_complexity = runtime_plan.get("path_complexity")
+    if path_complexity is not None:
+        print(
+            "[path-complexity] "
+            f"A_path={int(path_complexity.get('A_path', 0))} "
+            f"mean={float(path_complexity.get('mean_predecessors_within_radius', 0.0)):.2f} "
+            f"segment_length_mm={float(path_complexity.get('segment_length_mm', 0.0)):.6g} "
+            f"initial_level_K={float(path_complexity.get('initial_level_K', 0.0)):.6g}"
+        )
+        initial_calibration = path_complexity.get("initial_calibration", {})
+        if initial_calibration:
+            print(
+                "[path-complexity] "
+                f"initial_calibrated_rel_l2={float(initial_calibration.get('rel_l2', 0.0)):.6g} "
+                f"estimated_A_times_rel_l2="
+                f"{float(path_complexity.get('estimated_amplified_rel_l2', 0.0)):.6g}"
+            )
+        if "target_rel_l2" in path_complexity:
+            initial_dag = path_complexity.get("initial_dag", {})
+            final_dag = path_complexity.get("final_dag", {})
+            if initial_dag:
+                print(
+                    "[path-complexity] "
+                    f"initial_max_cut_depth={int(initial_dag.get('global_max_cut_depth', 0))} "
+                    f"initial_edges={int(initial_dag.get('num_edges', 0))}"
+                )
+            print(
+                "[path-complexity] "
+                f"target_rel_l2={float(path_complexity['target_rel_l2']):.6g} "
+                f"local_rel_l2={float(path_complexity['adjusted_local_rel_l2']):.6g} "
+                f"adjusted_level_K={float(path_complexity['adjusted_level_K']):.6g} "
+                f"adjusted_A_path={int(path_complexity.get('adjusted_A_path', 0))}"
+            )
+            if final_dag:
+                print(
+                    "[path-complexity] "
+                    f"final_max_cut_depth={int(final_dag.get('global_max_cut_depth', 0))} "
+                    f"final_edges={int(final_dag.get('num_edges', 0))}"
+                )
+    partition_seconds = runtime_plan["partition_summary"].get("partition_seconds")
+    if partition_seconds is not None:
+        print(
+            "[partition] "
+            f"mode={runtime_plan['partition_summary'].get('partition_mode', args.planner_mode)} "
+            f"seconds={float(partition_seconds):.6f}"
+        )
     dp_algorithm = runtime_plan["partition_summary"].get("dp_algorithm")
     if dp_algorithm is not None:
         print(

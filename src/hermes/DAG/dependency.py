@@ -29,6 +29,85 @@ from hermes.utils.segment_types import Segment, SuperSegment
 AABB = tuple[float, float, float, float]
 
 
+CALIBRATION_LSEG_MM = np.asarray(
+    [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
+    dtype=float,
+)
+CALIBRATION_EPSILON_K = np.asarray(
+    [4.07e2, 1.15e2, 2.74e1, 5.72e0, 1.09e0, 1.93e-1, 3.24e-2, 5.23e-3, 8.19e-4],
+    dtype=float,
+)
+CALIBRATION_REL_L2 = np.asarray(
+    [6.62e-3, 1.87e-3, 4.50e-4, 9.60e-5, 1.87e-5, 3.41e-6, 5.90e-7, 9.79e-8, 1.58e-8],
+    dtype=float,
+)
+
+
+def _interp_loglog(x: float, xs: np.ndarray, ys: np.ndarray) -> tuple[float, bool]:
+    if float(x) <= 0.0:
+        raise ValueError(f"Interpolation input must be > 0, got {x!r}")
+    order = np.argsort(xs)
+    xs_sorted = np.asarray(xs, dtype=float)[order]
+    ys_sorted = np.asarray(ys, dtype=float)[order]
+    if len(xs_sorted) < 2:
+        raise ValueError("At least two calibration points are required.")
+    log_xs = np.log(xs_sorted)
+    log_ys = np.log(ys_sorted)
+    log_x = np.log(float(x))
+    extrapolated = bool(log_x < float(log_xs[0]) or log_x > float(log_xs[-1]))
+    if log_x < float(log_xs[0]):
+        slope = (float(log_ys[1]) - float(log_ys[0])) / (float(log_xs[1]) - float(log_xs[0]))
+        log_y = float(log_ys[0]) + slope * (float(log_x) - float(log_xs[0]))
+    elif log_x > float(log_xs[-1]):
+        slope = (float(log_ys[-1]) - float(log_ys[-2])) / (float(log_xs[-1]) - float(log_xs[-2]))
+        log_y = float(log_ys[-1]) + slope * (float(log_x) - float(log_xs[-1]))
+    else:
+        log_y = np.interp(log_x, log_xs, log_ys)
+    return float(np.exp(log_y)), extrapolated
+
+
+def calibration_epsilon_for_rel_l2(target_rel_l2: float) -> dict:
+    """Map target relative L2 error to epsilon/level_K using the built-in table."""
+    epsilon_K, clipped = _interp_loglog(
+        float(target_rel_l2),
+        CALIBRATION_REL_L2,
+        CALIBRATION_EPSILON_K,
+    )
+    implied_lseg_mm, lseg_clipped = _interp_loglog(
+        float(target_rel_l2),
+        CALIBRATION_REL_L2,
+        CALIBRATION_LSEG_MM,
+    )
+    return {
+        "target_rel_l2": float(target_rel_l2),
+        "level_K": float(epsilon_K),
+        "calibration_lseg_mm": float(implied_lseg_mm),
+        "extrapolated": bool(clipped or lseg_clipped),
+        "table": "builtin_lseg_epsilon_rel_l2",
+    }
+
+
+def calibration_rel_l2_for_epsilon(epsilon_K: float) -> dict:
+    """Map epsilon/level_K to relative L2 error using the built-in table."""
+    rel_l2, clipped = _interp_loglog(
+        float(epsilon_K),
+        CALIBRATION_EPSILON_K,
+        CALIBRATION_REL_L2,
+    )
+    implied_lseg_mm, lseg_clipped = _interp_loglog(
+        float(epsilon_K),
+        CALIBRATION_EPSILON_K,
+        CALIBRATION_LSEG_MM,
+    )
+    return {
+        "level_K": float(epsilon_K),
+        "rel_l2": float(rel_l2),
+        "calibration_lseg_mm": float(implied_lseg_mm),
+        "extrapolated": bool(clipped or lseg_clipped),
+        "table": "builtin_lseg_epsilon_rel_l2",
+    }
+
+
 # ── AABB geometry ─────────────────────────────────────────────────────────────
 
 def aabb_distance_nd(a: AABB, b: AABB) -> float:
@@ -78,6 +157,76 @@ def _segment_target_patch_samples_nd(
     return tuple(samples)
 
 
+def _segment_chords_nd(
+    seg: Segment,
+    *,
+    n_samples: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Decompose a segment's path into chords between n_samples evenly spaced
+    path samples (first and last always included).
+
+    Returns (chords, end_elapsed_s, start_elapsed_s):
+      chords          (C, 4) nd coords [x0, y0, x1, y1], C = n_samples - 1
+      end_elapsed_s   (C,) elapsed seconds from segment start to chord END
+                      (deposit time of the chord's youngest heat, source side)
+      start_elapsed_s (C,) elapsed seconds from segment start to chord START
+                      (earliest laser arrival on the chord, target side)
+    """
+    if int(n_samples) < 2:
+        raise ValueError("segment_samples must be >= 2")
+    steps = seg.steps
+    if len(steps) < 2:
+        x = float(steps[0].x_nd) if steps else 0.0
+        y = float(steps[0].y_nd) if steps else 0.0
+        return (
+            np.array([[x, y, x, y]], dtype=float),
+            np.zeros(1, dtype=float),
+            np.zeros(1, dtype=float),
+        )
+    inv_v = 1.0 / float(seg.V_mps)
+    elapsed = np.concatenate(
+        [[0.0], np.cumsum([float(s.dt_m) * inv_v for s in steps[:-1]])]
+    )
+    idxs = np.unique(np.round(np.linspace(0, len(steps) - 1, int(n_samples))).astype(int))
+    xs = np.array([float(steps[k].x_nd) for k in idxs])
+    ys = np.array([float(steps[k].y_nd) for k in idxs])
+    chords = np.column_stack([xs[:-1], ys[:-1], xs[1:], ys[1:]])
+    return chords, elapsed[idxs][1:], elapsed[idxs][:-1]
+
+
+def _segment_pair_min_dist_nd(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """
+    Pairwise minimum distances between two chord sets.
+
+    a: (Ca, 4) segments [x0, y0, x1, y1]; b: (Cb, 4). Returns (Ca, Cb).
+    Closest-point-of-two-segments (Ericson), vectorised; handles degenerate
+    (point) chords via the eps guards.
+    """
+    eps = 1e-30
+    P0 = a[:, None, 0:2]
+    d1 = a[:, None, 2:4] - P0
+    Q0 = b[None, :, 0:2]
+    d2 = b[None, :, 2:4] - Q0
+    r = P0 - Q0
+    aa = np.sum(d1 * d1, axis=-1)
+    ee = np.sum(d2 * d2, axis=-1)
+    ff = np.sum(d2 * r, axis=-1)
+    cc = np.sum(d1 * r, axis=-1)
+    bb = np.sum(d1 * d2, axis=-1)
+    denom = aa * ee - bb * bb
+    s = np.where(
+        denom > eps,
+        np.clip((bb * ff - cc * ee) / np.where(denom > eps, denom, 1.0), 0.0, 1.0),
+        0.0,
+    )
+    t = np.where(ee > eps, (bb * s + ff) / np.where(ee > eps, ee, 1.0), 0.0)
+    t = np.clip(t, 0.0, 1.0)
+    s = np.where(aa > eps, np.clip((bb * t - cc) / np.where(aa > eps, aa, 1.0), 0.0, 1.0), 0.0)
+    diff = (P0 + s[..., None] * d1) - (Q0 + t[..., None] * d2)
+    return np.sqrt(np.sum(diff * diff, axis=-1))
+
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -91,6 +240,16 @@ class DependencyModel:
     window_y_um: int = 6000
     window_z_um: int = 300
     target_patch_step_stride: int = 10
+    # Pairwise proximity test used for edge retention:
+    #   "aabb"   - source AABB vs square target patches, elapsed time from the
+    #              source segment END (published/paper behaviour).
+    #   "chords" - both segments decomposed into chords between
+    #              `segment_samples` evenly spaced path samples; exact
+    #              segment-to-segment distances; each source chord carries its
+    #              own deposit time; the target ROI half-width is added to the
+    #              retention radius instead of inflating geometry.
+    pair_test: str = "aabb"
+    segment_samples: int = 5
 
 
 @dataclass(frozen=True)
@@ -266,6 +425,7 @@ def _extract_r_eps_m_numerical(
     u,
     phys,
     level_K: float,
+    center_x_m: float = 0.0,
 ) -> float:
     import cupy as cp
 
@@ -275,7 +435,12 @@ def _extract_r_eps_m_numerical(
     if not bool(cp.any(mask).item()):
         return 0.0
 
-    x_m = ctx.x_init_cp[:, None] * float(phys.len_scale)
+    # Radius measured from the deposited track's midpoint (center_x_m), the
+    # minimax anchor of the chord: the pair test dilates the whole chord by
+    # r_eps, and any anchor ON the chord is safe (distance-to-anchor >=
+    # distance-to-chord); the midpoint minimises the isotropic over-estimate
+    # (~L/2 instead of ~L for the end point).
+    x_m = ctx.x_init_cp[:, None] * float(phys.len_scale) - float(center_x_m)
     y_m = ctx.y_init_cp[None, :] * float(phys.len_scale)
     r_m = cp.sqrt(x_m * x_m + y_m * y_m)
     return float(cp.max(r_m[mask]).item())
@@ -320,10 +485,15 @@ def build_r_eps_lookup_numerical(
         "window_x_um": int(model.window_x_um),
         "window_y_um": int(model.window_y_um),
         "window_z_um": int(model.window_z_um),
-        "max_steps": int(max_steps),
+        # The lookup diffuses until the isotherm vanishes; max_steps is only
+        # the initial estimate, so the cache key carries the hard cap instead.
+        "horizon_mode": "until_convergence",
+        "hard_cap_steps": 10 * max(1, int(max_steps)),
         "solver_mode": solver_mode,
         "source_on_steps": int(source_on_steps),
         "source_substeps": int(source_substeps),
+        # Radius anchor: midpoint of the deposited track (was: end point).
+        "radius_center": "track_midpoint",
         "laser_x_span_m": float(runtime.rc.laser.x_span_m),
         "float_type": getattr(runtime.float_type, "__name__", str(runtime.float_type)),
         "phys_n1": float(runtime.phys.n1),
@@ -374,7 +544,6 @@ def build_r_eps_lookup_numerical(
     u = cp.full((ctx.nx * ctx.ny * ctx.nz,), ctx.u0, dtype=runtime.float_type)
 
     qs_off = cp.zeros((ctx.nx, ctx.ny), dtype=runtime.float_type)
-    r_eps_arr = np.zeros(max_steps + 1, dtype=float)
 
     seg_len_nd = (float(V_mps) * float(dt_s)) / float(runtime.phys.len_scale)
     dx_sub_nd = seg_len_nd / float(source_substeps)
@@ -422,28 +591,58 @@ def build_r_eps_lookup_numerical(
             ).astype(runtime.float_type)
             u = ctx_source.solve_one_step(u, qs_on)
 
-    r_eps_arr[0] = _extract_r_eps_m_numerical(
-        ctx=ctx,
-        u=u,
-        phys=runtime.phys,
-        level_K=model.level_K,
-    )
-    for k in range(1, max_steps + 1):
-        u = ctx.solve_one_step(u, qs_off)
-        r_eps_arr[k] = _extract_r_eps_m_numerical(
+    # Diffuse until the isotherm actually vanishes: `max_steps` (derived from
+    # [dag].back_window) is only an initial horizon estimate; the physical
+    # thermal-memory horizon is where r_eps reaches zero. A hard safety cap
+    # (10x the estimate) guards against configurations whose isotherm never
+    # converges (e.g. near-adiabatic lookup domains at very small level_K).
+    hard_cap_steps = 10 * max(1, int(max_steps))
+    # The moving-domain deposit pins the source at the window origin, so the
+    # deposited track spans [-L, 0] along +x; its midpoint sits at -L/2.
+    track_len_m = float(source_on_steps) * float(V_mps) * float(dt_s)
+    center_x_m = -0.5 * track_len_m
+    r_eps_vals = [
+        _extract_r_eps_m_numerical(
             ctx=ctx,
             u=u,
             phys=runtime.phys,
             level_K=model.level_K,
+            center_x_m=center_x_m,
         )
-        if k > 0 and float(r_eps_arr[k]) == 0.0:
+    ]
+    k = 0
+    while float(r_eps_vals[-1]) > 0.0 or k == 0:
+        if k >= hard_cap_steps:
+            print(
+                f"  [warning] r_eps lookup did not converge within {hard_cap_steps} steps "
+                f"({hard_cap_steps * dt_s * 1e3:.1f} ms); thermal memory will be truncated. "
+                "Increase [dag].back_window or the lookup window/bc drainage.",
+                flush=True,
+            )
             break
+        k += 1
+        u = ctx.solve_one_step(u, qs_off)
+        r_eps_vals.append(
+            _extract_r_eps_m_numerical(
+                ctx=ctx,
+                u=u,
+                phys=runtime.phys,
+                level_K=model.level_K,
+                center_x_m=center_x_m,
+            )
+        )
+        if (k % 10000) == 0:
+            print(
+                f"  r_eps lookup: step {k} ({k * dt_s * 1e3:.1f} ms), "
+                f"radius {float(r_eps_vals[-1]) * 1e3:.3f} mm",
+                flush=True,
+            )
 
     cp.cuda.Stream.null.synchronize()
     cp.get_default_memory_pool().free_all_blocks()
     cp.get_default_pinned_memory_pool().free_all_blocks()
 
-    r_eps = tuple(float(x) for x in r_eps_arr.tolist())
+    r_eps = tuple(float(x) for x in r_eps_vals)
     np.save(cache_file, np.asarray(r_eps, dtype=float))
     return REpsLookup(
         dt_s=float(dt_s),
@@ -538,6 +737,13 @@ def build_supersegment_dependency_edges(
     if n == 0:
         return []
     back_window = max(1, int(back_window))
+    if str(getattr(model, "pair_test", "aabb")).strip().lower() == "chords":
+        return _build_edges_chords(
+            seg_list,
+            model=model,
+            lookup=lookup,
+            back_window=back_window,
+        )
     source_bounds_nd = [seg.path_bounds_nd for _, seg in seg_list]
     source_end_s = [float(seg.t_start_s + seg.duration_s) for _, seg in seg_list]
     target_samples_nd = [
@@ -581,6 +787,255 @@ def build_supersegment_dependency_edges(
     return [Edge(src=s, dst=d) for s, d in sorted(edges_set)]
 
 
+def _build_edges_chords(
+    seg_list: List[tuple[int, Segment]],
+    *,
+    model: DependencyModel,
+    lookup: REpsLookup,
+    back_window: int,
+) -> List[Edge]:
+    """
+    Chord-based space-time retention test (pair_test = "chords").
+
+    Both segments are decomposed into chords between `model.segment_samples`
+    evenly spaced path samples. For each (source chord k, target chord l):
+        d_kl  = exact chord-to-chord distance (metres)
+        tau_kl = (t_j_start + target_chord_start_l) - source_chord_end_k
+    and the edge (ss_i -> ss_j) is retained iff any pair satisfies
+        d_kl <= r_eps(tau_kl) + width_roi/2
+    The ROI half-width dilates the retention radius (capsule semantics)
+    instead of inflating the target geometry into square patches.
+    """
+    n = len(seg_list)
+    s = float(model.len_scale)
+    if s <= 0.0:
+        raise ValueError(f"len_scale must be > 0; got {s!r}")
+    n_samples = int(getattr(model, "segment_samples", 5))
+
+    chords_nd: list[np.ndarray] = []
+    src_end_abs_s: list[np.ndarray] = []
+    tgt_start_loc_s: list[np.ndarray] = []
+    for _, seg in seg_list:
+        chords, end_el, start_el = _segment_chords_nd(seg, n_samples=n_samples)
+        chords_nd.append(chords)
+        src_end_abs_s.append(float(seg.t_start_s) + end_el)
+        tgt_start_loc_s.append(start_el)
+
+    # Normalised per-segment AABBs (nd) for the vectorised broad phase.
+    # bbox distance <= chord distance, so rejecting on
+    #   d_bbox > max(r_eps) + width_roi/2
+    # can never drop a pair the exact narrow-phase test would keep.
+    bounds = np.empty((n, 4), dtype=float)
+    ss_ids = np.empty(n, dtype=np.int64)
+    powered = np.empty(n, dtype=bool)
+    for k, (ss_id, seg) in enumerate(seg_list):
+        b = seg.path_bounds_nd
+        x0, x1 = (b[0], b[1]) if b[0] <= b[1] else (b[1], b[0])
+        y0, y1 = (b[2], b[3]) if b[2] <= b[3] else (b[3], b[2])
+        bounds[k] = (x0, x1, y0, y1)
+        ss_ids[k] = int(ss_id)
+        powered[k] = float(seg.power_W) > 0.0
+
+    r_eps = lookup.as_array()
+    n_lookup = len(r_eps)
+    inv_dt = 1.0 / float(lookup.dt_s)
+    r_eps_max_m = float(r_eps.max()) if n_lookup else 0.0
+    edges_set: set[tuple[int, int]] = set()
+
+    # An empty isotherm (r_eps == 0: no point above the epsilon threshold)
+    # means no dependency regardless of geometry, so the last nonzero lookup
+    # index defines a hard thermal-time horizon. Convert it to a segment-count
+    # bound on the back window: for i < j the elapsed time is at least
+    # (j - i - 1) * min segment duration.
+    nz = np.nonzero(r_eps > 0.0)[0]
+    if nz.size == 0:
+        return []
+    t_horizon_s = float(nz[-1] + 1) * float(lookup.dt_s)
+    min_dur_s = min(float(seg.duration_s) for _, seg in seg_list if float(seg.duration_s) > 0.0)
+    # The window is the physical thermal-memory horizon, NOT the configured
+    # back_window: for i < j the elapsed time is at least
+    # (j - i - 1) * min segment duration, so no segment older than window_eff
+    # can still carry an above-epsilon residual.
+    window_eff = int(t_horizon_s / min_dur_s) + 2
+    if float(r_eps[-1]) > 0.0:
+        # Lookup hit its hard cap without converging: thermal memory beyond
+        # the table is unknown. Fall back to unbounded history (conservative).
+        print(
+            "  [warning] r_eps lookup unconverged at its hard cap; "
+            "using unbounded back window for edge retention.",
+            flush=True,
+        )
+        window_eff = n
+    if int(back_window) < int(window_eff):
+        print(
+            f"  [note] configured back_window={int(back_window)} segments is shorter than "
+            f"the thermal horizon ({int(window_eff)} segments, {t_horizon_s*1e3:.1f} ms); "
+            "using the physical horizon.",
+            flush=True,
+        )
+
+    for j in range(n):
+        ss_j_id, seg_j = seg_list[j]
+        if not powered[j]:
+            continue
+        half_w_m = 0.5 * max(0.0, float(seg_j.width_m))
+        lo = max(0, j - window_eff)
+        if lo >= j:
+            continue
+
+        # Broad phase: one vectorised bbox-distance sweep over the window.
+        W = bounds[lo:j]
+        dx = np.maximum(0.0, np.maximum(W[:, 0] - bounds[j, 1], bounds[j, 0] - W[:, 1]))
+        dy = np.maximum(0.0, np.maximum(W[:, 2] - bounds[j, 3], bounds[j, 2] - W[:, 3]))
+        near = (np.hypot(dx, dy) * s) <= (r_eps_max_m + half_w_m)
+        cand = np.nonzero(near & powered[lo:j] & (ss_ids[lo:j] != int(ss_j_id)))[0] + lo
+        if cand.size == 0:
+            continue
+
+        # Narrow phase, batched: stack every candidate's chords into one
+        # kernel call instead of one call per candidate.
+        tgt_chords = chords_nd[j]
+        tgt_arrival_abs = float(seg_j.t_start_s) + tgt_start_loc_s[j]   # (Ct,)
+        src_chords = np.concatenate([chords_nd[i] for i in cand])       # (Crows, 4)
+        src_ends = np.concatenate([src_end_abs_s[i] for i in cand])     # (Crows,)
+        counts = np.array([chords_nd[i].shape[0] for i in cand])
+        offsets = np.concatenate([[0], np.cumsum(counts)[:-1]])
+
+        d_m = _segment_pair_min_dist_nd(src_chords, tgt_chords) * s     # (Crows, Ct)
+        tau = np.maximum(0.0, tgt_arrival_abs[None, :] - src_ends[:, None])
+        idx = np.clip((tau * inv_dt).astype(np.int64), 0, n_lookup - 1)
+        radius = r_eps[idx]
+        row_hit = np.any((radius > 0.0) & (d_m <= radius + half_w_m), axis=1)  # (Crows,)
+        cand_hit = np.logical_or.reduceat(row_hit, offsets)
+        for i in cand[np.nonzero(cand_hit)[0]]:
+            edges_set.add((int(ss_ids[i]), int(ss_j_id)))
+
+    return [Edge(src=a, dst=b) for a, b in sorted(edges_set)]
+
+
+def compute_path_complexity_amplification(
+    supersegments: List[SuperSegment],
+    *,
+    model: DependencyModel,
+    lookup: REpsLookup,
+    back_window: int = 100,
+) -> dict:
+    """
+    Compute a conservative path-density amplification factor.
+
+    A_path = max_j |{i < j : d_ij <= r_eps(tau_ij)}|
+
+    The check mirrors ``build_supersegment_dependency_edges`` but counts
+    segment-level predecessors instead of emitting supersegment edges.  The
+    configured ``back_window`` bounds the thermal memory window, so A_path is
+    the maximum count inside that modeled history horizon.
+    """
+    seg_list: List[tuple[int, Segment]] = [
+        (int(ss.id), seg)
+        for ss in supersegments
+        for seg in ss.segments
+    ]
+    n = len(seg_list)
+    if n == 0:
+        return {
+            "A_path": 0,
+            "num_segments": 0,
+            "argmax_segment_index": None,
+            "argmax_supersegment_id": None,
+            "mean_predecessors_within_radius": 0.0,
+            "back_window_segments": int(max(1, int(back_window))),
+            "level_K": float(model.level_K),
+        }
+
+    back_window = max(1, int(back_window))
+    source_bounds_nd = [seg.path_bounds_nd for _, seg in seg_list]
+    source_end_s = [float(seg.t_start_s + seg.duration_s) for _, seg in seg_list]
+    target_samples_nd = [
+        _segment_target_patch_samples_nd(
+            seg,
+            len_scale=float(model.len_scale),
+            step_stride=int(model.target_patch_step_stride),
+        )
+        for _, seg in seg_list
+    ]
+    counts = np.zeros(n, dtype=np.int64)
+
+    for j in range(n):
+        _, seg_j = seg_list[j]
+        if seg_j.power_W == 0.0:
+            continue
+        target_samples_j = target_samples_nd[j]
+        count_j = 0
+        for i in range(max(0, j - back_window), j):
+            _, seg_i = seg_list[i]
+            if seg_i.power_W == 0.0:
+                continue
+            src_bounds_i = source_bounds_nd[i]
+            seg_i_end_s = source_end_s[i]
+            for local_elapsed_s, target_patch_nd in target_samples_j:
+                elapsed_s = max(0.0, seg_j.t_start_s + local_elapsed_s - seg_i_end_s)
+                dt_idx = max(0, min(int(elapsed_s / lookup.dt_s), len(lookup.r_eps_m) - 1))
+                d_m = aabb_distance_m(
+                    target_patch_nd,
+                    src_bounds_i,
+                    len_scale=float(model.len_scale),
+                )
+                if d_m <= float(lookup.at(dt_idx)):
+                    count_j += 1
+                    break
+        counts[j] = int(count_j)
+
+    argmax_idx = int(np.argmax(counts)) if n > 0 else 0
+    max_count = int(counts[argmax_idx]) if n > 0 else 0
+    argmax_ss_id = int(seg_list[argmax_idx][0]) if n > 0 else None
+    return {
+        "A_path": int(max_count),
+        "num_segments": int(n),
+        "argmax_segment_index": int(argmax_idx),
+        "argmax_supersegment_id": argmax_ss_id,
+        "mean_predecessors_within_radius": float(np.mean(counts)) if n > 0 else 0.0,
+        "back_window_segments": int(back_window),
+        "level_K": float(model.level_K),
+    }
+
+
+def compute_edge_indegree_summary(
+    edges: List[Edge],
+    num_supersegments: int,
+) -> dict:
+    """
+    In-degree statistics of the retained dependency DAG.
+
+    A_path = max in-degree = the largest number of retained source segments
+    whose influence superposes on a single target — the amplification factor
+    used to split a global error budget across simultaneous sub-epsilon
+    neglects. Unlike the legacy ``compute_path_complexity_amplification``
+    (an AABB-based re-scan), this measures the graph the pipeline actually
+    corrects along, so the factor is consistent with the configured pair test
+    and lookup source.
+    """
+    n = int(num_supersegments)
+    counts = np.zeros(max(1, n), dtype=np.int64)
+    for e in edges:
+        dst = int(e.dst)
+        if 0 <= dst < n:
+            counts[dst] += 1
+    if n == 0:
+        return {
+            "A_path": 0,
+            "num_supersegments": 0,
+            "argmax_supersegment_id": None,
+            "mean_indegree": 0.0,
+        }
+    argmax = int(np.argmax(counts))
+    return {
+        "A_path": int(counts[argmax]),
+        "num_supersegments": n,
+        "argmax_supersegment_id": argmax,
+        "mean_indegree": float(counts[:n].mean()),
+    }
+
+
 def build_adjacency(
     n_nodes: int,
     edges: List[Edge],
@@ -602,6 +1057,8 @@ __all__ = [
     "build_r_eps_lookup", "build_r_eps_lookup_analytical", "build_r_eps_lookup_numerical",
     "write_r_eps_lookup_csv",
     "aabb_distance_nd", "aabb_distance_m",
-    "build_supersegment_dependency_edges",
+    "calibration_epsilon_for_rel_l2", "calibration_rel_l2_for_epsilon",
+    "build_supersegment_dependency_edges", "compute_path_complexity_amplification",
+    "compute_edge_indegree_summary",
     "build_adjacency",
 ]

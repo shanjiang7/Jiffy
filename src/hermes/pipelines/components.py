@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from hermes.pipelines.config import PipelineConfig
 from hermes.pipelines.ss_builder import build_ss_from_cfg
@@ -21,6 +21,9 @@ from hermes.DAG.dependency import (
     build_r_eps_lookup,
     write_r_eps_lookup_csv,
     build_supersegment_dependency_edges,
+    calibration_epsilon_for_rel_l2,
+    calibration_rel_l2_for_epsilon,
+    compute_edge_indegree_summary,
 )
 from hermes.utils.viz_utils import (
     plot_path_with_supersegments,
@@ -28,6 +31,17 @@ from hermes.utils.viz_utils import (
     plot_components,
     plot_dag_networkx,
 )
+
+
+def _edge_depth_summary(edges: list[Edge]) -> dict:
+    n_chain = sum(1 for e in edges if int(e.dst) == int(e.src) + 1)
+    n_cross = len(edges) - n_chain
+    return {
+        "num_edges": int(len(edges)),
+        "num_chain_edges": int(n_chain),
+        "num_cross_edges": int(n_cross),
+        "global_max_cut_depth": int(max((int(e.dst) - int(e.src) for e in edges), default=0)),
+    }
 
 
 @dataclass
@@ -40,12 +54,16 @@ class DAGPipelineResult:
     num_layers: int
     ss_per_layer: int
     unit_steps: int
+    dependency_level_K: float
+    path_complexity_summary: dict | None = None
 
 
 def compute_dag_and_components(
     cfg: PipelineConfig,
     *,
     lookup_runtime: LookupRuntime | None = None,
+    path_complexity_report: bool = False,
+    path_complexity_target_rel_l2: float | None = None,
 ) -> DAGPipelineResult | None:
 
     print("=== Step 1: Building supersegments ===")
@@ -58,7 +76,9 @@ def compute_dag_and_components(
     if n_ss == 0:
         print("[done] no supersegments to process.")
         return None
-    unit_steps = sum(len(seg.steps) for seg in supersegments[0].segments)
+    # Solver timesteps per supersegment: a segment's steps tuple holds path
+    # SAMPLES (n_moves + 1); the correction horizon must count moves, not samples.
+    unit_steps = sum(int(seg.n_moves) for seg in supersegments[0].segments)
     print(f"  {ss_per_layer} SS/layer × {num_layers} layer(s) = {n_ss} total  ({unit_steps} steps each)")
 
     print("=== Step 2: Building r_eps lookup table ===")
@@ -78,7 +98,8 @@ def compute_dag_and_components(
     print(f"  lookup dt = solver dt = {lookup_dt_s*1e6:.1f} us")
     print(
         f"  back window = {cfg.dag.back_window} segments x {seg_steps} steps/segment "
-        f"({total_time_s*1e3:.2f} ms) -> {max_steps} lookup steps"
+        f"({total_time_s*1e3:.2f} ms) -> {max_steps} lookup steps (initial estimate; "
+        "lookup extends until the isotherm vanishes)"
     )
     print(f"  numerical solver mode = {lookup_runtime.solver_mode}")
     if lookup_runtime.source_substeps is not None:
@@ -99,16 +120,135 @@ def compute_dag_and_components(
             f"({(len(lookup.r_eps_m) - 1) * lookup_dt_s * 1e3:.2f} ms) – stopped early"
         )
 
+    path_complexity_summary = None
+    edges = None
+    if path_complexity_report or path_complexity_target_rel_l2 is not None:
+        print("=== Step 2b: Estimating path complexity (DAG max in-degree) ===")
+        initial_level_K = float(cfg.dependency.model.level_K)
+        actual_lseg_mm = float(first_seg.duration_s) * float(first_seg.V_mps) * 1000.0
+        # A_path is the max in-degree of the regular retained DAG, so the
+        # amplification factor is measured on the graph the pipeline actually
+        # corrects along (same pair test / lookup source as the final build).
+        edges = build_supersegment_dependency_edges(
+            supersegments,
+            model=cfg.dependency.model,
+            lookup=lookup,
+            back_window=cfg.dag.back_window,
+        )
+        initial_indegree = compute_edge_indegree_summary(edges, n_ss)
+        initial_edge_summary = _edge_depth_summary(edges)
+        initial_calibration = calibration_rel_l2_for_epsilon(initial_level_K)
+        A_path = int(initial_indegree.get("A_path", 0))
+        A_for_budget = max(1, int(A_path))
+        estimated_amplified_rel_l2 = (
+            float(A_for_budget) * float(initial_calibration["rel_l2"])
+        )
+        path_complexity_summary = {
+            "enabled": True,
+            "metric": "dag_max_indegree",
+            "A_path": int(A_path),
+            "A_for_budget": int(A_for_budget),
+            "num_segments": int(initial_indegree.get("num_supersegments", 0)),
+            "argmax_supersegment_id": initial_indegree.get("argmax_supersegment_id"),
+            "mean_predecessors_within_radius": float(
+                initial_indegree.get("mean_indegree", 0.0)
+            ),
+            "segment_length_mm": float(actual_lseg_mm),
+            "initial_level_K": float(initial_level_K),
+            "initial_calibration": initial_calibration,
+            "estimated_amplified_rel_l2": float(estimated_amplified_rel_l2),
+            "initial_dag": initial_edge_summary,
+        }
+        print(
+            "  "
+            f"initial DAG max cut depth={int(initial_edge_summary['global_max_cut_depth'])}  "
+            f"edges={int(initial_edge_summary['num_edges'])} "
+            f"({int(initial_edge_summary['num_chain_edges'])} chain, "
+            f"{int(initial_edge_summary['num_cross_edges'])} cross)"
+        )
+        print(
+            "  "
+            f"A_path={A_path} (max in-degree @ SS {initial_indegree.get('argmax_supersegment_id')})  "
+            f"mean={float(path_complexity_summary['mean_predecessors_within_radius']):.2f}  "
+            f"initial level_K={initial_level_K:.6g} K  "
+            f"calibrated relL2={float(initial_calibration['rel_l2']):.6g}  "
+            f"estimated amplified relL2={estimated_amplified_rel_l2:.6g}"
+        )
+
+        if path_complexity_target_rel_l2 is not None:
+            target_rel_l2 = float(path_complexity_target_rel_l2)
+            if target_rel_l2 <= 0.0:
+                raise ValueError("--path-complexity-target-rel-l2 must be > 0.")
+            adjusted_local_rel_l2 = float(target_rel_l2) / float(A_for_budget)
+            adjusted_calibration = calibration_epsilon_for_rel_l2(adjusted_local_rel_l2)
+            adjusted_level_K = float(adjusted_calibration["level_K"])
+            print(
+                "  "
+                f"target relL2={target_rel_l2:.6g} -> local relL2={adjusted_local_rel_l2:.6g} "
+                f"using A_for_budget={A_for_budget}"
+            )
+            print(f"  adjusted level_K={adjusted_level_K:.6g} K; rebuilding lookup/DAG")
+
+            adjusted_model = replace(cfg.dependency.model, level_K=adjusted_level_K)
+            cfg = replace(cfg, dependency=replace(cfg.dependency, model=adjusted_model))
+            lookup = build_r_eps_lookup(
+                model=cfg.dependency.model,
+                dt_s=lookup_dt_s,
+                V_mps=first_seg.V_mps,
+                P_W=first_seg.power_W,
+                max_steps=max_steps,
+                backend="numerical",
+                runtime=lookup_runtime,
+            )
+            if len(lookup.r_eps_m) < max_steps + 1:
+                print(
+                    f"  adjusted r_eps converged at step {len(lookup.r_eps_m) - 1} "
+                    f"({(len(lookup.r_eps_m) - 1) * lookup_dt_s * 1e3:.2f} ms) – stopped early"
+                )
+            edges = build_supersegment_dependency_edges(
+                supersegments,
+                model=cfg.dependency.model,
+                lookup=lookup,
+                back_window=cfg.dag.back_window,
+            )
+            adjusted_indegree = compute_edge_indegree_summary(edges, n_ss)
+            path_complexity_summary.update(
+                {
+                    "target_rel_l2": float(target_rel_l2),
+                    "adjusted_local_rel_l2": float(adjusted_local_rel_l2),
+                    "adjusted_level_K": float(adjusted_level_K),
+                    "adjusted_calibration": adjusted_calibration,
+                    "adjusted_A_path": int(adjusted_indegree.get("A_path", 0)),
+                    "adjusted_mean_predecessors_within_radius": float(
+                        adjusted_indegree.get("mean_indegree", 0.0)
+                    ),
+                    "adjusted_lookup_rebuilt": True,
+                }
+            )
+            print(
+                "  "
+                f"adjusted A_path={int(path_complexity_summary['adjusted_A_path'])}  "
+                f"mean={float(path_complexity_summary['adjusted_mean_predecessors_within_radius']):.2f}"
+            )
+
     print("=== Step 3: Building dependency DAG ===")
-    edges = build_supersegment_dependency_edges(
-        supersegments,
-        model=cfg.dependency.model,
-        lookup=lookup,
-        back_window=cfg.dag.back_window,
+    if edges is None:
+        edges = build_supersegment_dependency_edges(
+            supersegments,
+            model=cfg.dependency.model,
+            lookup=lookup,
+            back_window=cfg.dag.back_window,
+        )
+    else:
+        print("  (reusing DAG built during path-complexity estimation)")
+    final_edge_summary = _edge_depth_summary(edges)
+    if path_complexity_summary is not None:
+        path_complexity_summary["final_dag"] = final_edge_summary
+    print(
+        f"  {int(final_edge_summary['num_edges'])} edges  "
+        f"({int(final_edge_summary['num_chain_edges'])} chain, "
+        f"{int(final_edge_summary['num_cross_edges'])} cross-edges)"
     )
-    n_chain = sum(1 for e in edges if int(e.dst) == int(e.src) + 1)
-    n_cross = len(edges) - n_chain
-    print(f"  {len(edges)} edges  ({n_chain} chain, {n_cross} cross-edges)")
 
     print("=== Step 4: Finding DAG components ===")
     edge_pairs = [(int(e.src), int(e.dst)) for e in edges]
@@ -128,6 +268,8 @@ def compute_dag_and_components(
         num_layers=num_layers,
         ss_per_layer=ss_per_layer,
         unit_steps=unit_steps,
+        dependency_level_K=float(cfg.dependency.model.level_K),
+        path_complexity_summary=path_complexity_summary,
     )
 
 

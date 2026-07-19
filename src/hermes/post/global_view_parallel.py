@@ -146,7 +146,7 @@ def _build_active_plane_union(
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build parallel execution VTK series: melt_history + active_domain_union.")
     ap.add_argument("--output-path", required=True, help="Parallel run dir containing snapshots_par and snapshots_par_meta.")
-    ap.add_argument("--sim-config", default="configs/sim_ex1.ini", help="Simulation config path.")
+    ap.add_argument("--sim-config", default="configs/examples/sim_ex1.ini", help="Simulation config path.")
     ap.add_argument("--melt-threshold-nd", type=float, default=1.0, help="ND melting threshold.")
     ap.add_argument("--global-nx", type=int, default=512, help="Global grid points in X.")
     ap.add_argument("--global-ny", type=int, default=512, help="Global grid points in Y.")

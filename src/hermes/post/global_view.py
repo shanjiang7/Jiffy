@@ -234,8 +234,8 @@ def main() -> None:
         description="Map local snapshots to a global melt-history voxel grid (VTK time series)."
     )
     ap.add_argument("--output-path", required=True, help="Run dir containing snapshots_par.")
-    ap.add_argument("--sim-config", default="configs/sim_ex1.ini", help="Simulation config path.")
-    ap.add_argument("--path-config", default="configs/fast_heat.ini", help="Path/DAG config path.")
+    ap.add_argument("--sim-config", default="configs/examples/sim_ex1.ini", help="Simulation config path.")
+    ap.add_argument("--path-config", default="configs/examples/fast_heat.ini", help="Path/DAG config path.")
     ap.add_argument("--dt-us", type=float, help="Override solver dt in microseconds.")
     ap.add_argument("--num-layers", type=int, default=None, help="Override num_layers from path config.")
     ap.add_argument("--melt-threshold-nd", type=float, default=1.0, help="ND melting threshold.")
@@ -301,6 +301,7 @@ def main() -> None:
         phys=phys,
         float_type=float_type,
         solver_mode="fused",
+        source_on_steps=pipeline_cfg.dependency.lookup_source_on_steps,
         source_substeps=pipeline_cfg.dependency.mock_numerical_source_steps,
     )
     dag = compute_dag_and_components(pipeline_cfg, lookup_runtime=lookup_runtime)

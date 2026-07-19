@@ -4,7 +4,7 @@ CLI entry point for the supersegment DAG pipeline.
 
 Usage:
     python src/hermes/scripts/dag_pipeline.py \
-        --path-config configs/fast_heat.ini --out-dir outputs/dag
+        --path-config configs/examples/fast_heat.ini --out-dir outputs/dag
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def parse_args(argv=None):
         description="Full supersegment DAG pipeline: build, analyse, and visualize."
     )
     p.add_argument("--path-config", required=True,
-                   help="Path-config INI file (e.g. configs/fast_heat.ini)")
-    p.add_argument("--config", default="configs/sim_ex1.ini",
+                   help="Path-config INI file (e.g. configs/examples/fast_heat.ini)")
+    p.add_argument("--config", default="configs/examples/sim_ex1.ini",
                    help="Base simulation config used to derive dt and laser velocity.")
     p.add_argument("--out-dir", default="outputs/dag",
                    help="Output directory (default: outputs/dag)")
@@ -77,6 +77,7 @@ def main(argv=None):
         phys=phys,
         float_type=float_type,
         solver_mode=args.solver_mode,
+        source_on_steps=cfg.dependency.lookup_source_on_steps,
         source_substeps=cfg.dependency.mock_numerical_source_steps,
     )
     result = compute_dag_and_components(cfg, lookup_runtime=lookup_runtime)

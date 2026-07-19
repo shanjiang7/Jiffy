@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -13,6 +15,12 @@ class DependencyConfig:
     model: DependencyModel
     lookup_dt_s: float | None
     mock_numerical_source_steps: int
+    # Number of source-on deposit steps for the numerical r_eps lookup.
+    # 1 reproduces the published single-pulse mock source; a value equal to
+    # steps_per_segment ("segment" in the INI) deposits a full segment so
+    # r_eps(tau) measures whole-segment influence — the quantity the Table I
+    # calibration defines epsilon against.
+    lookup_source_on_steps: int = 1
 
 
 @dataclass(frozen=True)
@@ -112,9 +120,23 @@ class PipelineConfig:
                     fallback=str(DependencyModel.target_patch_step_stride),
                 )
             ),
+            pair_test=str(
+                cfg.get("dependency", "pair_test", fallback=str(DependencyModel.pair_test))
+            ).strip().lower(),
+            segment_samples=int(
+                cfg.get(
+                    "dependency",
+                    "segment_samples",
+                    fallback=str(DependencyModel.segment_samples),
+                )
+            ),
         )
         if int(model.target_patch_step_stride) < 1:
             raise ValueError("[dependency].target_patch_step_stride must be >= 1.")
+        if model.pair_test not in {"aabb", "chords"}:
+            raise ValueError("[dependency].pair_test must be 'aabb' or 'chords'.")
+        if int(model.segment_samples) < 2:
+            raise ValueError("[dependency].segment_samples must be >= 2.")
         mock_numerical_source_steps = int(
             cfg.get("dependency", "mock_numerical_source_steps", fallback="1")
         )
@@ -127,12 +149,31 @@ class PipelineConfig:
             if raw_lookup_dt:
                 lookup_dt_s = float(parse_length_expr(raw_lookup_dt))
 
+        steps_per_segment = int(cfg.get("run", "steps_per_segment", fallback="200"))
+        raw_lookup_src = str(
+            cfg.get("dependency", "lookup_source_on_steps", fallback="1")
+        ).strip().lower()
+        if raw_lookup_src == "segment":
+            lookup_source_on_steps = steps_per_segment
+        elif raw_lookup_src == "chord":
+            # One chord's worth of deposit — matches the geometric unit the
+            # chords pair test retains edges for (each chord carries its own
+            # deposit time).
+            n_chords = max(1, int(model.segment_samples) - 1)
+            lookup_source_on_steps = max(1, math.ceil(steps_per_segment / n_chords))
+        else:
+            lookup_source_on_steps = int(raw_lookup_src)
+        if lookup_source_on_steps < 1:
+            raise ValueError(
+                "[dependency].lookup_source_on_steps must be >= 1, 'segment', or 'chord'."
+            )
+
         return cls(
             cfg_path=cfg_path,
             effective_motion_step_nd=None,
             len_scale=len_scale,
             segment=seg_cfg,
-            steps_per_segment=int(cfg.get("run", "steps_per_segment", fallback="200")),
+            steps_per_segment=steps_per_segment,
             width_roi_m=float(parse_length_expr(cfg.get("run", "width_roi_m", fallback="0.0001mm"))),
             first_n_points=first_n_points,
             segments_per_supersegment=int(cfg.get("run", "segments_per_supersegment", fallback="8")),
@@ -140,6 +181,7 @@ class PipelineConfig:
                 model=model,
                 lookup_dt_s=lookup_dt_s,
                 mock_numerical_source_steps=mock_numerical_source_steps,
+                lookup_source_on_steps=lookup_source_on_steps,
             ),
             dag=DagConfig(
                 back_window=int(cfg.get("dag", "back_window", fallback="100")),

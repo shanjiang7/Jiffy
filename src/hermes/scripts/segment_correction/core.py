@@ -4,6 +4,7 @@ import numpy as np
 from typing import Dict, List
 from hermes.motion.types import PathDef
 from hermes.scripts.outer_solver import OuterContext, run_ss_outer
+from hermes.utils.snapshot_utils import crop_snapshot
 
 
 _CORRECTION_CHUNK_MAX_BYTES = 64 * 1024 * 1024
@@ -321,6 +322,37 @@ def _recv_correction_chunks(
     return delta_snaps
 
 
+def _append_host_snapshot(
+    out: List[np.ndarray],
+    snap_u: cp.ndarray,
+    *,
+    nx: int,
+    ny: int,
+    nz: int,
+    h_m: float | None,
+) -> None:
+    if h_m is None:
+        out.append(cp.asnumpy(snap_u))
+    else:
+        out.append(crop_snapshot(cp.asnumpy(snap_u), nx, ny, nz, h_m))
+
+
+def _append_host_delta_snapshot(
+    out: List[np.ndarray],
+    snap_u: cp.ndarray,
+    *,
+    ambient_gpu: cp.ndarray,
+    nx: int,
+    ny: int,
+    nz: int,
+    h_m: float | None,
+) -> None:
+    if h_m is None:
+        out.append(cp.asnumpy(snap_u - ambient_gpu))
+    else:
+        out.append(crop_snapshot(cp.asnumpy(snap_u - ambient_gpu), nx, ny, nz, h_m))
+
+
 def run_parallel_tracer(
     ctx: OuterContext,
     ambient_gpu: cp.ndarray,
@@ -339,6 +371,7 @@ def run_parallel_tracer(
     component_successors: Dict[int, List[int]] | None = None,
     deltaT_K: float = 1.0,
     collect_output_snapshots: bool = True,
+    h_m: float | None = None,
 ) -> tuple[Dict[int, List[np.ndarray]], dict[str, float]]:
     """
     Pipelined component execution with source-side tracer correction.
@@ -410,7 +443,14 @@ def run_parallel_tracer(
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps=comp_snapshot_steps,
             snapshot_callback=(
-                lambda snap_u, out=base_snaps_host: out.append(cp.asnumpy(snap_u))
+                lambda snap_u, out=base_snaps_host: _append_host_snapshot(
+                    out,
+                    snap_u,
+                    nx=int(ctx.nx),
+                    ny=int(ctx.ny),
+                    nz=int(ctx.nz),
+                    h_m=h_m,
+                )
             ) if collect_output_snapshots else None,
         )
         cp.cuda.Stream.null.synchronize()
@@ -449,7 +489,15 @@ def run_parallel_tracer(
                 max_steps=max_tracer_steps,
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps=bridge_snapshot_steps,
-                snapshot_callback=lambda snap_u, out=delta_snaps_host: out.append(cp.asnumpy(snap_u - ambient_gpu)),
+                snapshot_callback=lambda snap_u, out=delta_snaps_host: _append_host_delta_snapshot(
+                    out,
+                    snap_u,
+                    ambient_gpu=ambient_gpu,
+                    nx=int(ctx.nx),
+                    ny=int(ctx.ny),
+                    nz=int(ctx.nz),
+                    h_m=h_m,
+                ),
             )
             cp.cuda.Stream.null.synchronize()
             timing_stats["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
