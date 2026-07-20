@@ -71,9 +71,11 @@ $$
 
 This is an identity, not an approximation: the true error field of the
 production run equals the sum of all present and future measured shifts. The
-estimator reports $\lVert d_0 \rVert$ (per snapshot, relative $L_2$, reduced
-to max/RMS over the source-on snapshot set — the same population as the
-accuracy metric).
+estimator's headline is the **cumulative** $\lVert u_k - u_0 \rVert$ (per
+snapshot, relative $L_2$, max over the source-on snapshot set — the same
+population as the accuracy metric), which converges to the true production
+error as the ladder exhausts the tiers; the per-rung shifts
+$\lVert d_k \rVert$ serve as the convergence/stopping signal.
 
 ## 3. Tier decay and the two-sided bound
 
@@ -135,8 +137,9 @@ non-negligible influence is connected in $S_0$'s DAG; equivalently, the
 channel-(A) tiers are subdominant.
 
 Under (A2) the ladder may drop channel (A) entirely ("horizon-only" mode):
-each rung is a pure $+1$-supersegment extension, requiring **no DAG rebuilds
-and no influence-lookup tables** — the estimator's planning cost is zero.
+each rung is a pure $+N$-supersegment window extension, requiring **no DAG
+rebuilds and no influence-lookup tables** — the estimator's planning cost is
+zero.
 (A2) is not an article of faith: it is exactly what the calibrated DAG
 construction provides (every pair with pointwise influence $\ge \varepsilon$
 at its elapsed time is connected), and it is *checkable* by running the full
