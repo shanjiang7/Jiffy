@@ -698,7 +698,9 @@ def _run_self_check_ladder(
     }
 
     current = final_states_host
+    production_states = final_states_host  # u_0 stays intact: rungs build copies
     estimates: list[tuple[float, float]] = []
+    cumulative: list[float] = []
     total_tracers = 0
 
     for rung_idx, rung in enumerate(self_check_maps["rungs"], start=1):
@@ -711,12 +713,19 @@ def _run_self_check_ladder(
             for k, vs in rung["component_successors"].items()
         }
         rung_deep_horizon = {int(k): int(v) for k, v in rung["horizon_ss_map"].items()}
-        # target horizon this rung: at least previous+1, or the rung DAG's
+        # Target horizon this rung: the rung DAG's horizon (full mode) or, at
+        # minimum, a geometrically growing advance (+2^(k-1) supersegments):
+        # +1, +2, +4, ... so a few rungs sweep the whole thermal tail. A fixed
+        # +1 advance walks long tails with tier ratio ~1 (measured on the
+        # 31-cut hybrid/Bull studies) and under-reads the first-rung estimate.
+        floor_step = 1 << (int(rung_idx) - 1)
         horizon_next: Dict[int, int] = {}
         for c in all_comp_ids:
             w = int(path_def_by_id[int(c)].weight)
             deep_h = _effective_horizon_ss(rung_deep_horizon, int(c), w)
-            horizon_next[int(c)] = min(int(w), max(int(deep_h), int(horizon_now[int(c)]) + 1))
+            horizon_next[int(c)] = min(
+                int(w), max(int(deep_h), int(horizon_now[int(c)]) + int(floor_step))
+            )
 
         send_reqs: list[object] = []
         local_deltas: Dict[int, Dict[int, tuple[int, List[np.ndarray]]]] = {}
@@ -833,7 +842,25 @@ def _run_self_check_ladder(
         for req in send_reqs:
             req.wait()
 
+        # cumulative shift vs the production state u_0 (the converged value of
+        # this quantity IS the production error, by the telescoping identity)
+        local_cum_max = 0.0
+        for j in assigned_comps:
+            prod0 = production_states.get(int(j), [])
+            refined = refined_states.get(int(j), [])
+            rel_steps = _snapshot_steps_for_component(int(j), snapshot_steps_by_component)
+            if rel_steps is None:
+                rel_steps = list(range(len(prod0)))
+            on_mask = _source_on_snapshot_mask(path_def_by_id[int(j)], rel_steps)
+            for snap_idx, (s0, sk) in enumerate(zip(prod0, refined)):
+                if snap_idx < len(on_mask) and not on_mask[snap_idx]:
+                    continue
+                diff = sk.astype(np.float64) - s0.astype(np.float64)
+                den = max(float(np.linalg.norm(sk.astype(np.float64))), 1e-30)
+                local_cum_max = max(local_cum_max, float(np.linalg.norm(diff)) / den)
+
         g_max = comm_sc.allreduce(local_max_rel, op=MPI.MAX)
+        g_cum_max = comm_sc.allreduce(local_cum_max, op=MPI.MAX)
         g_max_new = comm_sc.allreduce(local_max_rel_new, op=MPI.MAX)
         g_max_ext = comm_sc.allreduce(local_max_rel_ext, op=MPI.MAX)
         g_num = comm_sc.allreduce(local_sq_num, op=MPI.SUM)
@@ -842,6 +869,7 @@ def _run_self_check_ladder(
         g_tracers = comm_sc.allreduce(n_tracers, op=MPI.SUM)
         g_rms = (g_num / g_den) ** 0.5 if g_den > 0.0 else 0.0
         estimates.append((float(g_max), float(g_rms)))
+        cumulative.append(float(g_cum_max))
         total_tracers += int(g_tracers)
         if rank == 0:
             rung_label = (
@@ -850,9 +878,9 @@ def _run_self_check_ladder(
                 else f"refinement level_K={float(rung['level_K']):.6g} K"
             )
             print(
-                f"[self-check] iter {rung_idx}: estimated rel-L2 of previous iterate "
-                f"({rung_label}): "
-                f"max={g_max:.4e}  rms={g_rms:.4e}  "
+                f"[self-check] iter {rung_idx}: shift max={g_max:.4e} rms={g_rms:.4e}  "
+                f"cumulative-estimate-of-u0 max={g_cum_max:.4e}  "
+                f"({rung_label}) "
                 f"[new-pairs max={g_max_new:.4e}, horizon-ext max={g_max_ext:.4e}]  "
                 f"({int(g_tracers)} correction(s), {int(g_snaps)} snapshot(s))",
                 flush=True,
@@ -874,6 +902,16 @@ def _run_self_check_ladder(
     timing_stats["self_check_rms_rel_l2"] = float(estimates[0][1]) if estimates else 0.0
     timing_stats["self_check_final_max_rel_l2"] = float(estimates[-1][0]) if estimates else 0.0
     timing_stats["self_check_num_extra_corrections"] = float(total_tracers)
+    timing_stats["self_check_cumulative_max_rel_l2"] = (
+        float(cumulative[-1]) if cumulative else 0.0
+    )
     if rank == 0 and estimates:
         ladder = "  ".join(f"iter{k+1}: {mx:.3e}" for k, (mx, _) in enumerate(estimates))
         print(f"[self-check] ladder (max shift per iteration): {ladder}", flush=True)
+        cum = "  ".join(f"iter{k+1}: {c:.3e}" for k, c in enumerate(cumulative))
+        print(f"[self-check] cumulative estimate of production error: {cum}", flush=True)
+        print(
+            "[self-check] ESTIMATED production max rel-L2 (converged cumulative): "
+            f"{cumulative[-1]:.4e}",
+            flush=True,
+        )

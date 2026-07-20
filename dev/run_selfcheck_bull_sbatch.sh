@@ -78,20 +78,30 @@ import json, re, sys
 
 log = open(sys.argv[1]).read()
 iters = int(sys.argv[2])
-ests = re.findall(
-    r"\[self-check\] iter (\d+): estimated rel-L2 of previous iterate.*?max=([0-9.e+-]+)\s+rms=([0-9.e+-]+)", log
-)
+shifts = re.findall(r"\[self-check\] iter (\d+): shift max=([0-9.e+-]+)", log)
+cums = re.findall(r"cumulative-estimate-of-u0 max=([0-9.e+-]+)", log)
 
 def truth(suffix):
     try:
         d = json.load(open(f"outputs/accuracy_bull_tol1e4_h30/compare_par32_ladder{suffix}/comparison_summary.json"))
-        return f"{d['max_rel_l2']:.4e}"
+        return d["max_rel_l2"]
     except Exception:
-        return "n/a"
+        return None
 
-print(f"  {'iterate':<10} {'true max rel-L2':>16} {'self-check estimate':>20}")
-print(f"  {'u_0 (prod)':<10} {truth(''):>16} {ests[0][1] if ests else 'n/a':>20}")
+def fmt(x):
+    return f"{x:.4e}" if isinstance(x, float) else "n/a"
+
+t0 = truth("")
+print(f"  {'iterate':<10} {'true max rel-L2':>16} {'shift d_k':>12} {'cum est of u_0':>15}")
+print(f"  {'u_0 (prod)':<10} {fmt(t0):>16} {'-':>12} {'-':>15}")
 for k in range(1, iters + 1):
-    est = ests[k][1] if k < len(ests) else "-"
-    print(f"  {'u_' + str(k):<10} {truth(f'_iter{k}'):>16} {est:>20}")
+    tk = truth(f"_iter{k}")
+    sh = shifts[k-1][1] if k-1 < len(shifts) else "-"
+    cm = cums[k-1] if k-1 < len(cums) else "-"
+    print(f"  {'u_' + str(k):<10} {fmt(tk):>16} {sh:>12} {cm:>15}")
+est = float(cums[-1]) if cums else None
+print()
+if est is not None and t0 is not None:
+    print(f"  HEADLINE: estimated production error {est:.4e}  vs  true {t0:.4e}"
+          f"  (ratio {est/t0:.3f})")
 PYEOF
