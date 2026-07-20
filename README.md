@@ -22,7 +22,7 @@ compare                          ──►  rel-L2 (parallel vs serial)
 ```
 
 Inspection tools: `plan_only.py` (DAG/partition preview without solving, incl.
-`--path-complexity` A_path reporting) and `post/global_view*.py` (VTK
+`--path-complexity-report` A_path reporting) and `post/global_view*.py` (VTK
 melt-history export for the paper's figures).
 
 ## Requirements
@@ -117,11 +117,17 @@ dev/                 debug tools and supplementary experiments (see dev/README.m
   chord of track (validated default). `segment` is the most conservative
   option; an integer gives an explicit step count (1 = the published
   single-pulse source, which under-resolves dense paths).
-- `--path-complexity` (main.py / plan_only.py) — measures A_path (max
-  in-degree of the dependency DAG) and tightens ε to `target / A_path` via the
-  calibration table. Relevant at high rank counts: with many partition cuts,
-  up to A_path sub-ε neglects superpose, and the plain 1e-4 configuration can
-  exceed its target (see `dev/run_accuracy_cuts_*.sh` for the study).
+- `--path-complexity-report` (plan_only.py) — reports A_path, the max
+  in-degree of the dependency DAG: the path-complexity metric that predicts
+  error amplification at high rank counts (up to A_path sub-ε neglects
+  superpose at dense cuts; see `dev/run_accuracy_cuts_*.sh` for the study).
+- `--self-check` (main.py) — a-posteriori self-convergence error estimate and
+  iterative repair: extends the retained corrections incrementally
+  (`--self-check-horizon-step` supersegments per iteration,
+  `--self-check-iters` iterations), reports the per-iteration rel-L2 shift and
+  the cumulative estimate of the production error — no serial reference
+  required. Validated at 31 cuts: estimated vs true production error agree to
+  four digits on both test paths (see docs/error_analysis.md).
 
 ## Notes for reviewers
 

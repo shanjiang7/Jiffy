@@ -13,8 +13,8 @@ Nothing here is needed to reproduce the paper. Contents:
   chord vs 10-step lookup sources (shows the tol1e4 guarantee is
   rank-count-dependent; see the A_path discussion in the top-level README).
 - `run_accuracy_hybrid_fix_sbatch.sh` — 8-rank lookup-source ablation runner.
-- `run_accuracy_pathcomplexity_sbatch.sh` — 32-rank validation of the
-  `--path-complexity` (A_path) error-budget correction.
+- `run_selfcheck_{hybrid,bull}_sbatch.sh` — self-convergence ladder studies
+  (estimate-vs-truth tables at 31 cuts; see docs/error_analysis.md).
 - `run_mpi_diagnostic_*.sh` — gamma-diagnostic runs.
 - `quick_start.sh` — legacy environment snippet (superseded by `env_vista.sh`).
 
