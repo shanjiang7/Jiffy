@@ -550,6 +550,31 @@ def _effective_horizon_ss(
 
 
 
+def _source_on_snapshot_mask(
+    pd: PathDef,
+    rel_snapshot_steps: list[int],
+) -> list[bool]:
+    """True for snapshot steps that fall inside a source-on leg of pd.
+
+    The self-check shift is measured with the same source-on-only semantics as
+    the accuracy comparisons: source-off connector snapshots are excluded."""
+    intervals: list[tuple[int, int, bool]] = []
+    acc = 0
+    for leg in pd.legs:
+        n = int(getattr(leg, "steps", 0))
+        intervals.append((acc, acc + n, bool(getattr(leg, "source_on", True))))
+        acc += n
+    mask: list[bool] = []
+    for step in rel_snapshot_steps:
+        on = True
+        for lo, hi, leg_on in intervals:
+            if lo <= int(step) < hi:
+                on = leg_on
+                break
+        mask.append(on)
+    return mask
+
+
 def _self_check_emitters(
     *,
     assigned_comps: List[int],
@@ -784,7 +809,13 @@ def _run_self_check_ladder(
                     refined[idx] = refined[idx] + delta
                     chan[idx] += delta.astype(np.float64)
             refined_states[int(j)] = refined
+            rel_steps = _snapshot_steps_for_component(int(j), snapshot_steps_by_component)
+            if rel_steps is None:
+                rel_steps = list(range(len(production)))
+            on_mask = _source_on_snapshot_mask(path_def_by_id[int(j)], rel_steps)
             for snap_idx, (old_snap, new_snap) in enumerate(zip(production, refined)):
+                if snap_idx < len(on_mask) and not on_mask[snap_idx]:
+                    continue  # source-off connector snapshot: excluded, matching the accuracy metric
                 diff = new_snap.astype(np.float64) - old_snap.astype(np.float64)
                 den = float(np.linalg.norm(new_snap.astype(np.float64)))
                 den_safe = max(den, 1e-30)
