@@ -714,19 +714,18 @@ def _run_self_check_ladder(
         }
         rung_deep_horizon = {int(k): int(v) for k, v in rung["horizon_ss_map"].items()}
         horizon_only = float(rung.get("level_K", 0.0)) <= 0.0
+        step = int(self_check_maps.get("horizon_step_ss", 4))
         horizon_next: Dict[int, int] = {}
         for c in all_comp_ids:
             w = int(path_def_by_id[int(c)].weight)
             if horizon_only:
-                # Saturating schedule: rung 1 extends every connected pair's
-                # correction to the target's FULL extent, capturing the entire
-                # truncated-tail error in one shot (d_1 ~ e_0); later rungs
-                # have nothing left and verify convergence (~0), making the
-                # shift sequence monotone by construction. Fixed-step
-                # schedules cannot promise that: slice magnitudes follow the
-                # path's revisit geometry (measured on the 31-cut Bull:
-                # 8.4e-6 -> 8.4e-5 -> 1.1e-4 with +1 supersegment per rung).
-                horizon_next[int(c)] = int(w)
+                # Incremental ladder: each iteration applies `horizon_step_ss`
+                # additional supersegments of correction to every connected
+                # pair; the decaying shift sequence across iterations is the
+                # self-convergence evidence. The step should span the path's
+                # local revisit scale (a 1-SS step samples single slices whose
+                # magnitudes follow the revisit geometry non-monotonically).
+                horizon_next[int(c)] = min(int(w), int(horizon_now[int(c)]) + step)
             else:
                 deep_h = _effective_horizon_ss(rung_deep_horizon, int(c), w)
                 horizon_next[int(c)] = min(

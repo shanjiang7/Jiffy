@@ -162,6 +162,15 @@ def parse_args(argv=None):
         ),
     )
     p.add_argument(
+        "--self-check-horizon-step",
+        type=int,
+        default=4,
+        help=(
+            "Horizon-mode ladder step: additional supersegments of correction "
+            "applied per iteration (default: 4)."
+        ),
+    )
+    p.add_argument(
         "--self-check-iters",
         type=int,
         default=1,

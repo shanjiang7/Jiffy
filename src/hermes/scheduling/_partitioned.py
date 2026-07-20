@@ -283,6 +283,7 @@ def _build_self_check_maps(
     gamma: float,
     iterations: int,
     mode: str,
+    horizon_step_ss: int,
     production_level_K: float,
     production_pred_map: dict[int, list[int]],
     runtime_components,
@@ -317,6 +318,7 @@ def _build_self_check_maps(
             "gamma": float(gamma),
             "iterations": int(iterations),
             "mode": "horizon",
+            "horizon_step_ss": int(horizon_step_ss),
             "rungs": [
                 {
                     "level_K": 0.0,
@@ -381,6 +383,7 @@ def _build_self_check_maps(
         "gamma": float(gamma),
         "iterations": int(iterations),
         "mode": "full",
+        "horizon_step_ss": int(horizon_step_ss),
         "rungs": rungs,
     }
 
@@ -407,6 +410,7 @@ def build_partitioned_runtime_plan(
     self_check_gamma: float | None = None,
     self_check_iterations: int = 1,
     self_check_mode: str = "horizon",
+    self_check_horizon_step_ss: int = 4,
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),
@@ -476,6 +480,7 @@ def build_partitioned_runtime_plan(
             gamma=float(self_check_gamma),
             iterations=int(self_check_iterations),
             mode=str(self_check_mode),
+            horizon_step_ss=int(self_check_horizon_step_ss),
             production_level_K=float(dag_stage.dag_result.dependency_level_K),
             production_pred_map=component_predecessors,
             runtime_components=runtime_components,
@@ -494,7 +499,8 @@ def build_partitioned_runtime_plan(
         if self_check["mode"] == "horizon":
             print(
                 "[self-check] horizon-only refinement ladder: "
-                f"{self_check['iterations']} iteration(s), +1 supersegment per rung "
+                f"{self_check['iterations']} iteration(s), "
+                f"+{self_check['horizon_step_ss']} supersegment(s) per iteration "
                 "(no deep DAGs/lookups)"
             )
         else:
