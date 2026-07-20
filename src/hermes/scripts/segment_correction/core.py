@@ -303,6 +303,7 @@ def run_parallel_tracer(
     collect_output_snapshots: bool = True,
     h_m: float | None = None,
     self_check_maps: dict | None = None,
+    self_check_save_callback=None,
 ) -> tuple[Dict[int, List[np.ndarray]], dict[str, float]]:
     """
     Pipelined component execution with source-side tracer correction.
@@ -509,7 +510,7 @@ def run_parallel_tracer(
     print(f"[rank {rank}] Correction superposition completed.")
 
     if self_check_active:
-        _run_self_check_round(
+        _run_self_check_ladder(
             ctx=ctx,
             ambient_gpu=ambient_gpu,
             comm=comm,
@@ -530,6 +531,7 @@ def run_parallel_tracer(
             production_horizon_ss_map=correction_horizon_ss_map,
             h_m=h_m,
             timing_stats=timing_stats,
+            save_callback=self_check_save_callback,
         )
 
     return (final_states_host if collect_output_snapshots else {}), timing_stats
@@ -547,23 +549,6 @@ def _effective_horizon_ss(
     return min(int(horizon_ss), int(dst_weight))
 
 
-def _self_check_ext_horizon_ss(
-    deep_horizon_map: Dict[int, int] | None,
-    production_horizon_map: Dict[int, int] | None,
-    dst_component: int,
-    dst_weight: int,
-) -> int:
-    """
-    Refined correction horizon for an existing pair: at least one supersegment
-    beyond the production horizon (the first neglected tier - chain-like paths
-    keep the same cut depth at the tighter threshold, but their truncated
-    correction tail is exactly the error), or the deeper DAG's horizon if that
-    reaches further. Capped at the target's full extent.
-    """
-    old_h = _effective_horizon_ss(production_horizon_map, dst_component, dst_weight)
-    deep_h = _effective_horizon_ss(deep_horizon_map, dst_component, dst_weight)
-    return min(int(dst_weight), max(int(deep_h), int(old_h) + 1))
-
 
 def _self_check_emitters(
     *,
@@ -573,25 +558,23 @@ def _self_check_emitters(
     correction_horizon_ss_map: Dict[int, int] | None,
     path_def_by_id: Dict[int, PathDef],
 ) -> set[int]:
-    """Owned components that must emit a phase-2 correction (new pair or
-    horizon extension of an existing pair)."""
-    refine_succ = self_check_maps["component_successors"]
-    deep_horizon = self_check_maps["horizon_ss_map"]
+    """Owned components that may emit a refinement correction on any rung:
+    any component with a successor in the production DAG (horizon extensions)
+    or in any rung's new pairs."""
+    _ = correction_horizon_ss_map, path_def_by_id
     emitters: set[int] = set()
     for j in assigned_comps:
-        if refine_succ.get(int(j)):
+        if succ_map.get(int(j)):
             emitters.add(int(j))
             continue
-        for succ_j in succ_map.get(int(j), []):
-            w = int(path_def_by_id[int(succ_j)].weight)
-            old_h = _effective_horizon_ss(correction_horizon_ss_map, succ_j, w)
-            if _self_check_ext_horizon_ss(deep_horizon, correction_horizon_ss_map, succ_j, w) > old_h:
+        for rung in self_check_maps["rungs"]:
+            if rung["component_successors"].get(int(j)) or rung["component_successors"].get(str(j)):
                 emitters.add(int(j))
                 break
     return emitters
 
 
-def _run_self_check_round(
+def _run_self_check_ladder(
     *,
     ctx: OuterContext,
     ambient_gpu: cp.ndarray,
@@ -613,34 +596,26 @@ def _run_self_check_round(
     production_horizon_ss_map: Dict[int, int] | None,
     h_m: float | None,
     timing_stats: dict,
+    save_callback=None,
 ) -> None:
     """
-    Self-convergence error estimate (a-posteriori, no serial reference).
+    Iterative self-convergence refinement (a-posteriori, no serial reference).
 
-    Two neglect channels are refined against the production run:
-      1. NEW PAIRS - component dependencies present only in the deeper DAG
-         built at level_K / gamma (full corrections, snapshot offset 0);
-      2. HORIZON EXTENSIONS - existing dependencies whose deeper cut depth
-         extends the correction window into the target (only the extension
-         snapshots are computed, applied at their snapshot offset).
-    The refined snapshots are superposed and the rel-L2 between production and
-    refined states is reported - the leading (first-neglected-tier) term of the
-    true parallel-vs-serial error.
+    Rung k applies the corrections neglected by the state after rung k-1:
+      - NEW PAIRS: component dependencies first connected at level_K/gamma^k
+        (full corrections over the rung's horizon window);
+      - HORIZON EXTENSIONS: every already-connected pair's correction window is
+        pushed to max(rung-k DAG horizon, previous horizon + 1 supersegment),
+        computing only the extension snapshots at their snapshot offset.
+    After superposing each rung, the inter-iteration rel-L2 shift (max/rms) is
+    reported: the estimate of the error of the PREVIOUS iterate. save_callback
+    (rung_index, states) receives each refined iterate for optional saving.
     """
     t0 = time.perf_counter()
-    # Separate communicator so self-check messages can reuse plain component-id
-    # tags without colliding with phase-1 correction traffic (MPI only
-    # guarantees tag values up to 32767).
+    # Separate communicator: self-check traffic reuses plain component-id tags
+    # without colliding with phase-1 messages; the per-rung allreduce also
+    # orders the rungs so same-tag messages of different rungs cannot mix.
     comm_sc = comm.Dup()
-    refine_pred = {
-        int(k): [int(v) for v in vs]
-        for k, vs in self_check_maps["component_predecessors"].items()
-    }
-    refine_succ = {
-        int(k): [int(v) for v in vs]
-        for k, vs in self_check_maps["component_successors"].items()
-    }
-    deep_horizon = {int(k): int(v) for k, v in self_check_maps["horizon_ss_map"].items()}
 
     def _bridge(src_j: int, dst_j: int, horizon_map):
         return _build_bridge_run(
@@ -682,132 +657,168 @@ def _run_self_check_round(
         cp.cuda.Stream.null.synchronize()
         return deltas
 
-    # ---- emit phase-2 corrections -------------------------------------------
-    send_reqs: list[object] = []
-    local_deltas: Dict[int, Dict[int, tuple[int, List[np.ndarray]]]] = {}
-    n_tracers = 0
-
-    def _dispatch(src_j: int, dst_j: int, offset: int, deltas: List[np.ndarray]) -> None:
-        nonlocal n_tracers
-        n_tracers += 1
-        dst_rank = int(comp_to_rank[int(dst_j)])
-        if int(dst_rank) == int(rank):
-            local_deltas.setdefault(int(dst_j), {})[int(src_j)] = (int(offset), deltas)
-        else:
-            send_reqs.append(
-                comm_sc.isend((int(offset),), dest=int(dst_rank), tag=int(dst_j))
-            )
-            _enqueue_correction_send(
-                comm=comm_sc,
-                dest_rank=int(dst_rank),
-                tag=int(dst_j),
-                delta_snaps_host=deltas,
-                send_reqs=send_reqs,
-            )
-
-    for j in assigned_comps:
-        # (1) new pairs: full correction over the deep horizon window
-        for succ_j in refine_succ.get(int(j), []):
-            x0, y0, legs, max_steps, snap_steps, _gap = _bridge(j, succ_j, deep_horizon)
-            _dispatch(j, succ_j, 0, _trace(j, x0, y0, legs, max_steps, snap_steps))
-        # (2) horizon extensions of existing pairs: only the extension window
-        for succ_j in production_succ_map.get(int(j), []):
-            w = int(path_def_by_id[int(succ_j)].weight)
-            old_h = _effective_horizon_ss(production_horizon_ss_map, succ_j, w)
-            new_h = _self_check_ext_horizon_ss(deep_horizon, production_horizon_ss_map, succ_j, w)
-            if new_h <= old_h:
-                continue
-            ext_horizon = dict(deep_horizon)
-            ext_horizon[int(succ_j)] = int(new_h)
-            x0, y0, legs, max_steps, snap_steps, gap = _bridge(j, succ_j, ext_horizon)
-            old_window = int(gap) + int(steps_per_ss) * int(old_h)
-            offset = sum(1 for st in snap_steps if int(st) < int(old_window))
-            ext_steps = [int(st) for st in snap_steps if int(st) >= int(old_window)]
-            # Always dispatch (even an empty extension): the receiver expects a
-            # message from every refined predecessor.
-            _dispatch(
-                j,
-                succ_j,
-                offset,
-                _trace(j, x0, y0, legs, max_steps, ext_steps) if ext_steps else [],
-            )
-
-    # ---- receive, superpose, measure ----------------------------------------
-    expected_sources: Dict[int, list[int]] = {}
-    for j in assigned_comps:
-        srcs = list(refine_pred.get(int(j), []))
-        for pred_j in production_pred_map.get(int(j), []):
-            w = int(path_def_by_id[int(j)].weight)
-            old_h = _effective_horizon_ss(production_horizon_ss_map, j, w)
-            new_h = _self_check_ext_horizon_ss(deep_horizon, production_horizon_ss_map, j, w)
-            if new_h > old_h:
-                srcs.append(int(pred_j))
-        if srcs:
-            expected_sources[int(j)] = sorted(set(srcs))
-
-    local_sq_num = 0.0
-    local_sq_den = 0.0
-    local_max_rel = 0.0
-    local_n_snaps = 0
-    for j, srcs in expected_sources.items():
-        production = final_states_host.get(int(j), [])
-        refined = [np.array(snap, copy=True) for snap in production]
-        for pred_j in srcs:
-            src_rank = int(comp_to_rank[int(pred_j)])
-            if int(src_rank) == int(rank):
-                entry = local_deltas.get(int(j), {}).get(int(pred_j))
-                if entry is None:
-                    continue
-                offset, deltas = entry
-            else:
-                (offset,) = comm_sc.recv(source=int(src_rank), tag=int(j))
-                deltas = _recv_correction_chunks(
-                    comm=comm_sc,
-                    source_rank=int(src_rank),
-                    tag=int(j),
-                )
-            for k, delta in enumerate(deltas):
-                idx = int(offset) + int(k)
-                if idx >= len(refined):
-                    break
-                refined[idx] = refined[idx] + delta
-        for old, new in zip(production, refined):
-            diff = new.astype(np.float64) - old.astype(np.float64)
-            den = float(np.linalg.norm(new.astype(np.float64)))
-            rel = float(np.linalg.norm(diff)) / max(den, 1e-30)
-            local_max_rel = max(local_max_rel, rel)
-            local_sq_num += float(np.dot(diff.ravel(), diff.ravel()))
-            local_sq_den += den * den
-            local_n_snaps += 1
-
-    for req in send_reqs:
-        req.wait()
-
     from mpi4py import MPI
 
-    global_max_rel = comm_sc.allreduce(local_max_rel, op=MPI.MAX)
-    global_sq_num = comm_sc.allreduce(local_sq_num, op=MPI.SUM)
-    global_sq_den = comm_sc.allreduce(local_sq_den, op=MPI.SUM)
-    global_n_snaps = comm_sc.allreduce(local_n_snaps, op=MPI.SUM)
-    global_n_tracers = comm_sc.allreduce(n_tracers, op=MPI.SUM)
-    comm_sc.Free()
-    global_rms_rel = (
-        (global_sq_num / global_sq_den) ** 0.5 if global_sq_den > 0.0 else 0.0
-    )
-
-    timing_stats["self_check_seconds"] = time.perf_counter() - t0
-    timing_stats["self_check_max_rel_l2"] = float(global_max_rel)
-    timing_stats["self_check_rms_rel_l2"] = float(global_rms_rel)
-    timing_stats["self_check_num_snapshots"] = float(global_n_snaps)
-    timing_stats["self_check_num_extra_corrections"] = float(global_n_tracers)
-    if rank == 0:
-        print(
-            "[self-check] estimated parallel-vs-serial rel-L2 "
-            f"(gamma={float(self_check_maps.get('gamma', 0.0)):.3g}, "
-            f"refinement level_K={float(self_check_maps.get('level_K', 0.0)):.6g} K): "
-            f"max={global_max_rel:.4e}  rms={global_rms_rel:.4e}  "
-            f"over {int(global_n_snaps)} snapshot(s), "
-            f"{int(global_n_tracers)} extra correction(s) "
-            f"[{int(self_check_maps.get('num_extra_edges', 0))} new pair(s) + horizon extensions]",
-            flush=True,
+    all_comp_ids = [int(c) for c in ordered_component_ids]
+    # Cumulative connectivity (dst -> preds) and per-dst effective horizon,
+    # advanced rung by rung; every rank tracks the same global state.
+    connected_pred: Dict[int, set[int]] = {
+        int(c): set(int(v) for v in production_pred_map.get(int(c), [])) for c in all_comp_ids
+    }
+    horizon_now: Dict[int, int] = {
+        int(c): _effective_horizon_ss(
+            production_horizon_ss_map, int(c), int(path_def_by_id[int(c)].weight)
         )
+        for c in all_comp_ids
+    }
+
+    current = final_states_host
+    estimates: list[tuple[float, float]] = []
+    total_tracers = 0
+
+    for rung_idx, rung in enumerate(self_check_maps["rungs"], start=1):
+        rung_pred = {
+            int(k): [int(v) for v in vs]
+            for k, vs in rung["component_predecessors"].items()
+        }
+        rung_succ = {
+            int(k): [int(v) for v in vs]
+            for k, vs in rung["component_successors"].items()
+        }
+        rung_deep_horizon = {int(k): int(v) for k, v in rung["horizon_ss_map"].items()}
+        # target horizon this rung: at least previous+1, or the rung DAG's
+        horizon_next: Dict[int, int] = {}
+        for c in all_comp_ids:
+            w = int(path_def_by_id[int(c)].weight)
+            deep_h = _effective_horizon_ss(rung_deep_horizon, int(c), w)
+            horizon_next[int(c)] = min(int(w), max(int(deep_h), int(horizon_now[int(c)]) + 1))
+
+        send_reqs: list[object] = []
+        local_deltas: Dict[int, Dict[int, tuple[int, List[np.ndarray]]]] = {}
+        n_tracers = 0
+
+        def _dispatch(src_j: int, dst_j: int, offset: int, deltas: List[np.ndarray]) -> None:
+            nonlocal n_tracers
+            n_tracers += 1
+            dst_rank = int(comp_to_rank[int(dst_j)])
+            if int(dst_rank) == int(rank):
+                local_deltas.setdefault(int(dst_j), {})[int(src_j)] = (int(offset), deltas)
+            else:
+                send_reqs.append(
+                    comm_sc.isend((int(offset),), dest=int(dst_rank), tag=int(dst_j))
+                )
+                _enqueue_correction_send(
+                    comm=comm_sc,
+                    dest_rank=int(dst_rank),
+                    tag=int(dst_j),
+                    delta_snaps_host=deltas,
+                    send_reqs=send_reqs,
+                )
+
+        for j in assigned_comps:
+            # (1) pairs newly connected at this rung: full correction window
+            for succ_j in rung_succ.get(int(j), []):
+                x0, y0, legs, max_steps, snap_steps, _gap = _bridge(
+                    j, succ_j, horizon_next
+                )
+                _dispatch(j, succ_j, 0, _trace(j, x0, y0, legs, max_steps, snap_steps))
+            # (2) horizon extensions of previously connected pairs
+            for succ_j in sorted(
+                s2 for s2, preds in connected_pred.items() if int(j) in preds
+            ):
+                if horizon_next[int(succ_j)] <= horizon_now[int(succ_j)]:
+                    continue
+                x0, y0, legs, max_steps, snap_steps, gap = _bridge(
+                    j, succ_j, horizon_next
+                )
+                old_window = int(gap) + int(steps_per_ss) * int(horizon_now[int(succ_j)])
+                offset = sum(1 for st in snap_steps if int(st) < int(old_window))
+                ext_steps = [int(st) for st in snap_steps if int(st) >= int(old_window)]
+                _dispatch(
+                    j,
+                    succ_j,
+                    offset,
+                    _trace(j, x0, y0, legs, max_steps, ext_steps) if ext_steps else [],
+                )
+
+        # expected refinement sources for each owned target this rung
+        local_sq_num = 0.0
+        local_sq_den = 0.0
+        local_max_rel = 0.0
+        local_n_snaps = 0
+        refined_states: Dict[int, List[np.ndarray]] = {}
+        for j in assigned_comps:
+            srcs = list(rung_pred.get(int(j), []))
+            if horizon_next[int(j)] > horizon_now[int(j)]:
+                srcs.extend(int(v) for v in connected_pred.get(int(j), set()))
+            srcs = sorted(set(srcs))
+            production = current.get(int(j), [])
+            refined = [np.array(snap, copy=True) for snap in production]
+            for pred_j in srcs:
+                src_rank = int(comp_to_rank[int(pred_j)])
+                if int(src_rank) == int(rank):
+                    entry = local_deltas.get(int(j), {}).get(int(pred_j))
+                    if entry is None:
+                        continue
+                    offset, deltas = entry
+                else:
+                    (offset,) = comm_sc.recv(source=int(src_rank), tag=int(j))
+                    deltas = _recv_correction_chunks(
+                        comm=comm_sc,
+                        source_rank=int(src_rank),
+                        tag=int(j),
+                    )
+                for k2, delta in enumerate(deltas):
+                    idx = int(offset) + int(k2)
+                    if idx >= len(refined):
+                        break
+                    refined[idx] = refined[idx] + delta
+            refined_states[int(j)] = refined
+            for old_snap, new_snap in zip(production, refined):
+                diff = new_snap.astype(np.float64) - old_snap.astype(np.float64)
+                den = float(np.linalg.norm(new_snap.astype(np.float64)))
+                rel = float(np.linalg.norm(diff)) / max(den, 1e-30)
+                local_max_rel = max(local_max_rel, rel)
+                local_sq_num += float(np.dot(diff.ravel(), diff.ravel()))
+                local_sq_den += den * den
+                local_n_snaps += 1
+
+        for req in send_reqs:
+            req.wait()
+
+        g_max = comm_sc.allreduce(local_max_rel, op=MPI.MAX)
+        g_num = comm_sc.allreduce(local_sq_num, op=MPI.SUM)
+        g_den = comm_sc.allreduce(local_sq_den, op=MPI.SUM)
+        g_snaps = comm_sc.allreduce(local_n_snaps, op=MPI.SUM)
+        g_tracers = comm_sc.allreduce(n_tracers, op=MPI.SUM)
+        g_rms = (g_num / g_den) ** 0.5 if g_den > 0.0 else 0.0
+        estimates.append((float(g_max), float(g_rms)))
+        total_tracers += int(g_tracers)
+        if rank == 0:
+            print(
+                f"[self-check] iter {rung_idx}: estimated rel-L2 of previous iterate "
+                f"(refinement level_K={float(rung['level_K']):.6g} K): "
+                f"max={g_max:.4e}  rms={g_rms:.4e}  "
+                f"({int(g_tracers)} correction(s), {int(g_snaps)} snapshot(s))",
+                flush=True,
+            )
+
+        current = refined_states
+        if save_callback is not None:
+            save_callback(int(rung_idx), current)
+
+        # advance cumulative state
+        for dst, preds in rung_pred.items():
+            connected_pred.setdefault(int(dst), set()).update(int(v) for v in preds)
+        horizon_now = horizon_next
+
+    comm_sc.Free()
+    timing_stats["self_check_seconds"] = time.perf_counter() - t0
+    timing_stats["self_check_iterations"] = float(len(estimates))
+    timing_stats["self_check_max_rel_l2"] = float(estimates[0][0]) if estimates else 0.0
+    timing_stats["self_check_rms_rel_l2"] = float(estimates[0][1]) if estimates else 0.0
+    timing_stats["self_check_final_max_rel_l2"] = float(estimates[-1][0]) if estimates else 0.0
+    timing_stats["self_check_num_extra_corrections"] = float(total_tracers)
+    if rank == 0 and estimates:
+        ladder = "  ".join(f"iter{k+1}: {mx:.3e}" for k, (mx, _) in enumerate(estimates))
+        print(f"[self-check] ladder (max shift per iteration): {ladder}", flush=True)

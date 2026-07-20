@@ -150,6 +150,21 @@ def parse_args(argv=None):
         help="Threshold tightening factor for the self-check refinement DAG (default: 2.0).",
     )
     p.add_argument(
+        "--self-check-iters",
+        type=int,
+        default=1,
+        help=(
+            "Number of refinement iterations (rungs) for --self-check: rung k uses "
+            "level_K/gamma^k and extends correction horizons by one supersegment per "
+            "rung. Each rung reports its rel-L2 shift (default: 1)."
+        ),
+    )
+    p.add_argument(
+        "--self-check-save-iters",
+        action="store_true",
+        help="Save each refinement iteration's snapshots to snapshots_par_iterK (for estimate-vs-truth studies).",
+    )
+    p.add_argument(
         "--diagnostic-check",
         action="store_true",
         help="Run an additional buffered DAG pass and compare snapshots.",
@@ -293,6 +308,35 @@ def _run_parallel_pass(
     comm.Barrier()
     par_t0 = time.perf_counter()
 
+    self_check_save_cb = None
+    if (
+        self_check_maps is not None
+        and bool(getattr(args, "self_check_save_iters", False))
+        and not bool(args.timing_only)
+    ):
+        h_m_cb = float(rc.level3.h_tuple[0])
+
+        def self_check_save_cb(rung_idx: int, states) -> None:
+            iter_snaps = out_dir / f"snapshots_par_iter{int(rung_idx)}"
+            iter_meta = out_dir / f"snapshots_par_iter{int(rung_idx)}_meta"
+            iter_snaps.mkdir(parents=True, exist_ok=True)
+            iter_meta.mkdir(parents=True, exist_ok=True)
+            save_parallel_snapshots(
+                rank=rank,
+                snaps_dir=iter_snaps,
+                meta_dir=iter_meta,
+                final_states_host=states,
+                path_defs=all_path_defs,
+                path_def_by_id=path_def_by_id,
+                start_step_map=start_step_map,
+                ss_per_layer=ss_per_layer,
+                steps_per_ss=steps_per_ss,
+                ctx=ctx,
+                h_m=h_m_cb,
+                snapshot_steps_by_component=snapshot_steps_by_component,
+                snap_every_steps=snap_every_steps,
+            )
+
     final_states_host, rank_timing_stats = run_parallel_tracer(
         ctx=ctx,
         ambient_gpu=ambient_gpu,
@@ -313,6 +357,7 @@ def _run_parallel_pass(
         collect_output_snapshots=not bool(args.timing_only),
         h_m=float(rc.level3.h_tuple[0]),
         self_check_maps=self_check_maps,
+        self_check_save_callback=self_check_save_cb,
     )
 
     par_total_s = time.perf_counter() - par_t0
@@ -449,6 +494,8 @@ def main(argv=None):
             raise ValueError("--self-check requires snapshots and cannot be used with --timing-only.")
         if float(args.self_check_gamma) <= 1.0:
             raise ValueError("--self-check-gamma must be > 1.")
+        if int(args.self_check_iters) < 1:
+            raise ValueError("--self-check-iters must be >= 1.")
         args.self_check_gamma_effective = float(args.self_check_gamma)
     if bool(args.path_complexity):
         pc_config_path = resolve_path(project_root, args.path_complexity_config, "configs/path_complexity.ini")

@@ -1,13 +1,14 @@
 #!/bin/bash
-# Validate the --self-check error estimator at 31 cuts (32 ranks), where the
-# plain tol1e4 configuration EXCEEDS its 1e-4 target:
-#   hybrid tol1e4 par32: true error ~3.9e-4 (clear exceedance)
-#   bull   tol1e4 par32: true error ~1.1e-4 (marginal exceedance)
-# The job produces a table of the self-convergence estimate vs the reference
-# rel-L2 (compared against the serial ground truth) for both paths.
+# Self-convergence ladder study at 31 cuts (32 ranks), tol1e4, hybrid + Bull:
+# 6 refinement iterations (level_K/2^k, horizons +1 SS per rung), saving every
+# iterate, then comparing each against the serial ground truth.
 #
-# Smoke pre-validation (2-rank straight line): estimate 4.2800e-5 vs true
-# 4.2800e-5, digit-exact.
+# Final table per path and iteration k:
+#   estimate_k  = self-check shift at iteration k  (predicts error of iterate k-1)
+#   truth_{k-1} = rel-L2 of iterate k-1 vs the serial reference
+# The estimator is validated if estimate_k tracks truth_{k-1} down the ladder,
+# and the ladder itself demonstrates error CONTROL: truth should fall below the
+# 1e-4 target within a few iterations.
 #
 # Usage:  sbatch dev/run_selfcheck_validation_sbatch.sh
 
@@ -38,6 +39,7 @@ source "${PROJECT_DIR}/env_vista.sh"
 
 SIM_CONFIG=configs/examples/sim_calibration.ini
 SNAP_EVERY=25
+ITERS=6
 
 for P in hybrid bull; do
   if [ "$P" = "hybrid" ]; then
@@ -52,46 +54,58 @@ for P in hybrid bull; do
   fi
 
   echo "======================================================"
-  echo " [$(date)] ${P}/tol1e4: 32 ranks (31 cuts) with --self-check"
+  echo " [$(date)] ${P}/tol1e4: 32 ranks (31 cuts), self-check ladder x${ITERS}"
   echo "======================================================"
   srun -N 8 -n 32 --ntasks-per-node=4 python src/hermes/scripts/segment_correction/main.py \
     --config "${SIM_CONFIG}" --path-config "${CFG}" \
     --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
     --planner-mode exact_dp --no-export-dag \
     --self-check --self-check-gamma 2.0 \
-    --out-dir "${ROOT}/par32_selfcheck"
+    --self-check-iters "${ITERS}" --self-check-save-iters \
+    --out-dir "${ROOT}/par32_ladder"
 
-  echo "------ [$(date)] ${P}: reference rel-L2 vs serial ground truth ------"
-  srun -N 1 -n 1 --ntasks-per-node=1 python src/hermes/scripts/segment_correction/compare_runs.py \
-    --par-snap-dir "${ROOT}/par32_selfcheck/snapshots_par" \
-    --ser-snap-dir "${ROOT}/serial/snapshots_ser" \
-    --out-dir "${ROOT}/compare_par32_selfcheck" \
-    --source-on-only \
-    --config "${SIM_CONFIG}" --path-config "${CFG}" --dt-us 10 | tail -6
-
-  if [ -f "${ROOT}/compare_par32_selfcheck/comparison_summary.json" ]; then
-    rm -rf "${ROOT}/par32_selfcheck/snapshots_par" "${ROOT}/par32_selfcheck/snapshots_par_meta"
-  fi
+  echo "------ [$(date)] ${P}: truth comparisons (production + each iterate) ------"
+  for K in "" $(seq -f "_iter%g" 1 ${ITERS}); do
+    srun -N 1 -n 1 --ntasks-per-node=1 python src/hermes/scripts/segment_correction/compare_runs.py \
+      --par-snap-dir "${ROOT}/par32_ladder/snapshots_par${K}" \
+      --ser-snap-dir "${ROOT}/serial/snapshots_ser" \
+      --out-dir "${ROOT}/compare_par32_ladder${K}" \
+      --source-on-only \
+      --config "${SIM_CONFIG}" --path-config "${CFG}" --dt-us 10 | tail -3
+    if [ -f "${ROOT}/compare_par32_ladder${K}/comparison_summary.json" ]; then
+      rm -rf "${ROOT}/par32_ladder/snapshots_par${K}" "${ROOT}/par32_ladder/snapshots_par${K}_meta"
+    fi
+  done
 done
 
 echo ""
-echo "[$(date)] ===== self-convergence estimate vs serial reference (31 cuts, tol1e4) ====="
+echo "[$(date)] ===== self-convergence estimate vs true rel-L2 (31 cuts, tol1e4, gamma=2) ====="
 L=$(ls -t logs/selfcheck_val_*.out | head -1)
-python3 - "$L" <<'PYEOF'
+python3 - "$L" "${ITERS}" <<'PYEOF'
 import json, re, sys
 
 log = open(sys.argv[1]).read()
-estimates = re.findall(
-    r"\[self-check\] estimated parallel-vs-serial rel-L2.*?max=([0-9.e+-]+)\s+rms=([0-9.e+-]+)", log
+iters = int(sys.argv[2])
+# per-path estimate lists, in run order (hybrid then bull)
+blocks = re.findall(
+    r"\[self-check\] iter (\d+): estimated rel-L2 of previous iterate.*?max=([0-9.e+-]+)\s+rms=([0-9.e+-]+)",
+    log,
 )
 paths = ["hybrid", "bull"]
-print(f"{'path':<8} {'self-check max':>15} {'self-check rms':>15} {'reference max':>15} {'reference mean':>15}")
-for i, p in enumerate(paths):
-    est_max, est_rms = (estimates[i] if i < len(estimates) else ("n/a", "n/a"))
+per_path = {p: blocks[i * iters : (i + 1) * iters] for i, p in enumerate(paths)}
+
+def truth(p, suffix):
     try:
-        d = json.load(open(f"outputs/accuracy_{p}_tol1e4_h30/compare_par32_selfcheck/comparison_summary.json"))
-        ref_max, ref_mean = f"{d['max_rel_l2']:.4e}", f"{d['mean_rel_l2']:.4e}"
+        d = json.load(open(f"outputs/accuracy_{p}_tol1e4_h30/compare_par32_ladder{suffix}/comparison_summary.json"))
+        return f"{d['max_rel_l2']:.4e}"
     except Exception:
-        ref_max = ref_mean = "n/a"
-    print(f"{p:<8} {est_max:>15} {est_rms:>15} {ref_max:>15} {ref_mean:>15}")
+        return "n/a"
+
+for p in paths:
+    print(f"\n{p} (target 1e-4):")
+    print(f"  {'iterate':<10} {'true max rel-L2':>16} {'self-check estimate':>20}")
+    print(f"  {'u_0 (prod)':<10} {truth(p, ''):>16} {per_path[p][0][1] if per_path[p] else 'n/a':>20}")
+    for k in range(1, iters + 1):
+        est = per_path[p][k][1] if k < len(per_path[p]) else "-"
+        print(f"  {'u_' + str(k):<10} {truth(p, f'_iter{k}'):>16} {est:>20}")
 PYEOF
