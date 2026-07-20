@@ -19,7 +19,7 @@
 #SBATCH -t 2:00:00
 #SBATCH -o logs/selfchk_bull_%j.out
 #SBATCH -e logs/selfchk_bull_%j.err
-#SBATCH -p gh-dev
+#SBATCH -p gh
 #SBATCH -A ASC21034
 
 set -uo pipefail
@@ -41,7 +41,7 @@ SIM_CONFIG=configs/examples/sim_calibration.ini
 CFG=configs/accuracy/bull_tol1e4.ini
 ROOT=outputs/accuracy_bull_tol1e4_h30
 SNAP_EVERY=25
-ITERS=6
+ITERS=10
 
 if [ ! -d "${ROOT}/serial/snapshots_ser" ]; then
   echo "ERROR: serial reference ${ROOT}/serial missing" >&2
@@ -53,7 +53,7 @@ srun -N 8 -n 32 --ntasks-per-node=4 python src/hermes/scripts/segment_correction
   --config "${SIM_CONFIG}" --path-config "${CFG}" \
   --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
   --planner-mode exact_dp --no-export-dag \
-  --self-check --self-check-mode horizon \
+  --self-check --self-check-mode horizon --self-check-horizon-step 1 \
   --self-check-iters "${ITERS}" --self-check-save-iters \
   --out-dir "${ROOT}/par32_ladder"
 
