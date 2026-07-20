@@ -145,6 +145,7 @@ def _build_bridge_run(
         bridge_legs,
         int(max_tracer_steps),
         bridge_snapshot_steps,
+        int(gap_steps),
     )
 
 
@@ -301,6 +302,7 @@ def run_parallel_tracer(
     deltaT_K: float = 1.0,
     collect_output_snapshots: bool = True,
     h_m: float | None = None,
+    self_check_maps: dict | None = None,
 ) -> tuple[Dict[int, List[np.ndarray]], dict[str, float]]:
     """
     Pipelined component execution with source-side tracer correction.
@@ -333,8 +335,23 @@ def run_parallel_tracer(
         for comp_id in comps
     }
 
+    self_check_active = bool(self_check_maps) and bool(collect_output_snapshots)
+
+    self_check_emitters: set[int] = set()
+    if self_check_active:
+        self_check_emitters = _self_check_emitters(
+            assigned_comps=assigned_comps,
+            succ_map=succ_map,
+            self_check_maps=self_check_maps,
+            correction_horizon_ss_map=correction_horizon_ss_map,
+            path_def_by_id=path_def_by_id,
+        )
+
     base_states_host: Dict[int, List[np.ndarray]] = {}
     final_states_host: Dict[int, List[np.ndarray]] = {}
+    # End states retained (host side) only for components that must emit
+    # additional self-check corrections after the main pipeline.
+    end_states_host: Dict[int, np.ndarray] = {}
     local_correction_snaps: Dict[int, Dict[int, List[np.ndarray]]] = {}
     send_reqs: list[object] = []
     timing_stats = {
@@ -386,6 +403,8 @@ def run_parallel_tracer(
         timing_stats["base_solve_seconds"] += time.perf_counter() - base_t0
         if collect_output_snapshots:
             base_states_host[j] = base_snaps_host
+        if self_check_active and int(j) in self_check_emitters:
+            end_states_host[int(j)] = cp.asnumpy(final_u)
 
         for succ_j in succ_map.get(int(j), []):
             (
@@ -394,6 +413,7 @@ def run_parallel_tracer(
                 bridge_legs,
                 max_tracer_steps,
                 bridge_snapshot_steps,
+                _gap_steps,
             ) = _build_bridge_run(
                 src_component=int(j),
                 dst_component=int(succ_j),
@@ -487,4 +507,307 @@ def run_parallel_tracer(
     cp.cuda.Stream.null.synchronize()
     timing_stats["post_pipeline_seconds"] = time.perf_counter() - post_t0
     print(f"[rank {rank}] Correction superposition completed.")
+
+    if self_check_active:
+        _run_self_check_round(
+            ctx=ctx,
+            ambient_gpu=ambient_gpu,
+            comm=comm,
+            rank=rank,
+            assigned_comps=assigned_comps,
+            self_check_maps=self_check_maps,
+            end_states_host=end_states_host,
+            final_states_host=final_states_host,
+            comp_to_rank=comp_to_rank,
+            ordered_component_ids=ordered_component_ids,
+            component_index=component_index,
+            path_def_by_id=path_def_by_id,
+            steps_per_ss=steps_per_ss,
+            snapshot_stride_steps=snapshot_stride_steps,
+            snapshot_steps_by_component=snapshot_steps_by_component,
+            production_succ_map=succ_map,
+            production_pred_map=pred_map,
+            production_horizon_ss_map=correction_horizon_ss_map,
+            h_m=h_m,
+            timing_stats=timing_stats,
+        )
+
     return (final_states_host if collect_output_snapshots else {}), timing_stats
+
+
+def _effective_horizon_ss(
+    horizon_ss_map: Dict[int, int] | None,
+    dst_component: int,
+    dst_weight: int,
+) -> int:
+    """Horizon actually used by _build_bridge_run for this destination."""
+    horizon_ss = 1
+    if horizon_ss_map is not None:
+        horizon_ss = max(1, int(horizon_ss_map.get(int(dst_component), 1)))
+    return min(int(horizon_ss), int(dst_weight))
+
+
+def _self_check_ext_horizon_ss(
+    deep_horizon_map: Dict[int, int] | None,
+    production_horizon_map: Dict[int, int] | None,
+    dst_component: int,
+    dst_weight: int,
+) -> int:
+    """
+    Refined correction horizon for an existing pair: at least one supersegment
+    beyond the production horizon (the first neglected tier - chain-like paths
+    keep the same cut depth at the tighter threshold, but their truncated
+    correction tail is exactly the error), or the deeper DAG's horizon if that
+    reaches further. Capped at the target's full extent.
+    """
+    old_h = _effective_horizon_ss(production_horizon_map, dst_component, dst_weight)
+    deep_h = _effective_horizon_ss(deep_horizon_map, dst_component, dst_weight)
+    return min(int(dst_weight), max(int(deep_h), int(old_h) + 1))
+
+
+def _self_check_emitters(
+    *,
+    assigned_comps: List[int],
+    succ_map: Dict[int, List[int]],
+    self_check_maps: dict,
+    correction_horizon_ss_map: Dict[int, int] | None,
+    path_def_by_id: Dict[int, PathDef],
+) -> set[int]:
+    """Owned components that must emit a phase-2 correction (new pair or
+    horizon extension of an existing pair)."""
+    refine_succ = self_check_maps["component_successors"]
+    deep_horizon = self_check_maps["horizon_ss_map"]
+    emitters: set[int] = set()
+    for j in assigned_comps:
+        if refine_succ.get(int(j)):
+            emitters.add(int(j))
+            continue
+        for succ_j in succ_map.get(int(j), []):
+            w = int(path_def_by_id[int(succ_j)].weight)
+            old_h = _effective_horizon_ss(correction_horizon_ss_map, succ_j, w)
+            if _self_check_ext_horizon_ss(deep_horizon, correction_horizon_ss_map, succ_j, w) > old_h:
+                emitters.add(int(j))
+                break
+    return emitters
+
+
+def _run_self_check_round(
+    *,
+    ctx: OuterContext,
+    ambient_gpu: cp.ndarray,
+    comm,
+    rank: int,
+    assigned_comps: List[int],
+    self_check_maps: dict,
+    end_states_host: Dict[int, np.ndarray],
+    final_states_host: Dict[int, List[np.ndarray]],
+    comp_to_rank: Dict[int, int],
+    ordered_component_ids: list[int],
+    component_index: dict[int, int],
+    path_def_by_id: Dict[int, PathDef],
+    steps_per_ss: int,
+    snapshot_stride_steps: int | None,
+    snapshot_steps_by_component: Dict[int, List[int]] | None,
+    production_succ_map: Dict[int, List[int]],
+    production_pred_map: Dict[int, List[int]],
+    production_horizon_ss_map: Dict[int, int] | None,
+    h_m: float | None,
+    timing_stats: dict,
+) -> None:
+    """
+    Self-convergence error estimate (a-posteriori, no serial reference).
+
+    Two neglect channels are refined against the production run:
+      1. NEW PAIRS - component dependencies present only in the deeper DAG
+         built at level_K / gamma (full corrections, snapshot offset 0);
+      2. HORIZON EXTENSIONS - existing dependencies whose deeper cut depth
+         extends the correction window into the target (only the extension
+         snapshots are computed, applied at their snapshot offset).
+    The refined snapshots are superposed and the rel-L2 between production and
+    refined states is reported - the leading (first-neglected-tier) term of the
+    true parallel-vs-serial error.
+    """
+    t0 = time.perf_counter()
+    # Separate communicator so self-check messages can reuse plain component-id
+    # tags without colliding with phase-1 correction traffic (MPI only
+    # guarantees tag values up to 32767).
+    comm_sc = comm.Dup()
+    refine_pred = {
+        int(k): [int(v) for v in vs]
+        for k, vs in self_check_maps["component_predecessors"].items()
+    }
+    refine_succ = {
+        int(k): [int(v) for v in vs]
+        for k, vs in self_check_maps["component_successors"].items()
+    }
+    deep_horizon = {int(k): int(v) for k, v in self_check_maps["horizon_ss_map"].items()}
+
+    def _bridge(src_j: int, dst_j: int, horizon_map):
+        return _build_bridge_run(
+            src_component=int(src_j),
+            dst_component=int(dst_j),
+            ordered_component_ids=ordered_component_ids,
+            component_index=component_index,
+            path_def_by_id=path_def_by_id,
+            steps_per_ss=steps_per_ss,
+            snapshot_stride_steps=snapshot_stride_steps,
+            snapshot_steps_by_component=snapshot_steps_by_component,
+            correction_horizon_ss_map=horizon_map,
+        )
+
+    def _trace(src_j: int, x0, y0, legs, max_steps, snap_steps) -> List[np.ndarray]:
+        deltas: List[np.ndarray] = []
+        final_u = cp.asarray(end_states_host[int(src_j)])
+        run_ss_outer(
+            ctx,
+            final_u,
+            x0,
+            y0,
+            legs,
+            steps_per_ss,
+            source_on=False,
+            max_steps=max_steps,
+            snapshot_stride_steps=snapshot_stride_steps,
+            snapshot_steps=snap_steps,
+            snapshot_callback=lambda snap_u, out=deltas: _append_host_delta_snapshot(
+                out,
+                snap_u,
+                ambient_gpu=ambient_gpu,
+                nx=int(ctx.nx),
+                ny=int(ctx.ny),
+                nz=int(ctx.nz),
+                h_m=h_m,
+            ),
+        )
+        cp.cuda.Stream.null.synchronize()
+        return deltas
+
+    # ---- emit phase-2 corrections -------------------------------------------
+    send_reqs: list[object] = []
+    local_deltas: Dict[int, Dict[int, tuple[int, List[np.ndarray]]]] = {}
+    n_tracers = 0
+
+    def _dispatch(src_j: int, dst_j: int, offset: int, deltas: List[np.ndarray]) -> None:
+        nonlocal n_tracers
+        n_tracers += 1
+        dst_rank = int(comp_to_rank[int(dst_j)])
+        if int(dst_rank) == int(rank):
+            local_deltas.setdefault(int(dst_j), {})[int(src_j)] = (int(offset), deltas)
+        else:
+            send_reqs.append(
+                comm_sc.isend((int(offset),), dest=int(dst_rank), tag=int(dst_j))
+            )
+            _enqueue_correction_send(
+                comm=comm_sc,
+                dest_rank=int(dst_rank),
+                tag=int(dst_j),
+                delta_snaps_host=deltas,
+                send_reqs=send_reqs,
+            )
+
+    for j in assigned_comps:
+        # (1) new pairs: full correction over the deep horizon window
+        for succ_j in refine_succ.get(int(j), []):
+            x0, y0, legs, max_steps, snap_steps, _gap = _bridge(j, succ_j, deep_horizon)
+            _dispatch(j, succ_j, 0, _trace(j, x0, y0, legs, max_steps, snap_steps))
+        # (2) horizon extensions of existing pairs: only the extension window
+        for succ_j in production_succ_map.get(int(j), []):
+            w = int(path_def_by_id[int(succ_j)].weight)
+            old_h = _effective_horizon_ss(production_horizon_ss_map, succ_j, w)
+            new_h = _self_check_ext_horizon_ss(deep_horizon, production_horizon_ss_map, succ_j, w)
+            if new_h <= old_h:
+                continue
+            ext_horizon = dict(deep_horizon)
+            ext_horizon[int(succ_j)] = int(new_h)
+            x0, y0, legs, max_steps, snap_steps, gap = _bridge(j, succ_j, ext_horizon)
+            old_window = int(gap) + int(steps_per_ss) * int(old_h)
+            offset = sum(1 for st in snap_steps if int(st) < int(old_window))
+            ext_steps = [int(st) for st in snap_steps if int(st) >= int(old_window)]
+            # Always dispatch (even an empty extension): the receiver expects a
+            # message from every refined predecessor.
+            _dispatch(
+                j,
+                succ_j,
+                offset,
+                _trace(j, x0, y0, legs, max_steps, ext_steps) if ext_steps else [],
+            )
+
+    # ---- receive, superpose, measure ----------------------------------------
+    expected_sources: Dict[int, list[int]] = {}
+    for j in assigned_comps:
+        srcs = list(refine_pred.get(int(j), []))
+        for pred_j in production_pred_map.get(int(j), []):
+            w = int(path_def_by_id[int(j)].weight)
+            old_h = _effective_horizon_ss(production_horizon_ss_map, j, w)
+            new_h = _self_check_ext_horizon_ss(deep_horizon, production_horizon_ss_map, j, w)
+            if new_h > old_h:
+                srcs.append(int(pred_j))
+        if srcs:
+            expected_sources[int(j)] = sorted(set(srcs))
+
+    local_sq_num = 0.0
+    local_sq_den = 0.0
+    local_max_rel = 0.0
+    local_n_snaps = 0
+    for j, srcs in expected_sources.items():
+        production = final_states_host.get(int(j), [])
+        refined = [np.array(snap, copy=True) for snap in production]
+        for pred_j in srcs:
+            src_rank = int(comp_to_rank[int(pred_j)])
+            if int(src_rank) == int(rank):
+                entry = local_deltas.get(int(j), {}).get(int(pred_j))
+                if entry is None:
+                    continue
+                offset, deltas = entry
+            else:
+                (offset,) = comm_sc.recv(source=int(src_rank), tag=int(j))
+                deltas = _recv_correction_chunks(
+                    comm=comm_sc,
+                    source_rank=int(src_rank),
+                    tag=int(j),
+                )
+            for k, delta in enumerate(deltas):
+                idx = int(offset) + int(k)
+                if idx >= len(refined):
+                    break
+                refined[idx] = refined[idx] + delta
+        for old, new in zip(production, refined):
+            diff = new.astype(np.float64) - old.astype(np.float64)
+            den = float(np.linalg.norm(new.astype(np.float64)))
+            rel = float(np.linalg.norm(diff)) / max(den, 1e-30)
+            local_max_rel = max(local_max_rel, rel)
+            local_sq_num += float(np.dot(diff.ravel(), diff.ravel()))
+            local_sq_den += den * den
+            local_n_snaps += 1
+
+    for req in send_reqs:
+        req.wait()
+
+    from mpi4py import MPI
+
+    global_max_rel = comm_sc.allreduce(local_max_rel, op=MPI.MAX)
+    global_sq_num = comm_sc.allreduce(local_sq_num, op=MPI.SUM)
+    global_sq_den = comm_sc.allreduce(local_sq_den, op=MPI.SUM)
+    global_n_snaps = comm_sc.allreduce(local_n_snaps, op=MPI.SUM)
+    global_n_tracers = comm_sc.allreduce(n_tracers, op=MPI.SUM)
+    comm_sc.Free()
+    global_rms_rel = (
+        (global_sq_num / global_sq_den) ** 0.5 if global_sq_den > 0.0 else 0.0
+    )
+
+    timing_stats["self_check_seconds"] = time.perf_counter() - t0
+    timing_stats["self_check_max_rel_l2"] = float(global_max_rel)
+    timing_stats["self_check_rms_rel_l2"] = float(global_rms_rel)
+    timing_stats["self_check_num_snapshots"] = float(global_n_snaps)
+    timing_stats["self_check_num_extra_corrections"] = float(global_n_tracers)
+    if rank == 0:
+        print(
+            "[self-check] estimated parallel-vs-serial rel-L2 "
+            f"(gamma={float(self_check_maps.get('gamma', 0.0)):.3g}, "
+            f"refinement level_K={float(self_check_maps.get('level_K', 0.0)):.6g} K): "
+            f"max={global_max_rel:.4e}  rms={global_rms_rel:.4e}  "
+            f"over {int(global_n_snaps)} snapshot(s), "
+            f"{int(global_n_tracers)} extra correction(s) "
+            f"[{int(self_check_maps.get('num_extra_edges', 0))} new pair(s) + horizon extensions]",
+            flush=True,
+        )

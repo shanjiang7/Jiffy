@@ -134,6 +134,22 @@ def parse_args(argv=None):
         help="INI file with [path_complexity] settings.",
     )
     p.add_argument(
+        "--self-check",
+        action="store_true",
+        help=(
+            "A-posteriori self-convergence error estimate: after the normal run, "
+            "compute the corrections the production DAG neglected (rebuilt at "
+            "level_K/gamma), superpose them, and report the rel-L2 between the "
+            "production and refined snapshots. No serial reference needed."
+        ),
+    )
+    p.add_argument(
+        "--self-check-gamma",
+        type=float,
+        default=2.0,
+        help="Threshold tightening factor for the self-check refinement DAG (default: 2.0).",
+    )
+    p.add_argument(
         "--diagnostic-check",
         action="store_true",
         help="Run an additional buffered DAG pass and compare snapshots.",
@@ -201,6 +217,7 @@ def _run_parallel_pass(
             runtime_plan["component_successors"],
             int(runtime_plan.get("global_max_cut_depth", 0)),
             float(runtime_plan.get("dependency_level_K", 0.0)),
+            runtime_plan.get("self_check"),
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         planning_summary = build_planning_summary(
@@ -231,6 +248,7 @@ def _run_parallel_pass(
         component_successors,
         global_max_cut_depth,
         dependency_level_K,
+        self_check_maps,
     ) = bcast_data
 
     snap_every_steps = int(args.snap_every_steps)
@@ -294,6 +312,7 @@ def _run_parallel_pass(
         deltaT_K=float(phys.deltaT),
         collect_output_snapshots=not bool(args.timing_only),
         h_m=float(rc.level3.h_tuple[0]),
+        self_check_maps=self_check_maps,
     )
 
     par_total_s = time.perf_counter() - par_t0
@@ -424,6 +443,13 @@ def main(argv=None):
     args.path_complexity_report = False
     args.path_complexity_target_rel_l2 = None
     args.dependency_level_K_override = None
+    args.self_check_gamma_effective = None
+    if bool(args.self_check):
+        if bool(args.timing_only):
+            raise ValueError("--self-check requires snapshots and cannot be used with --timing-only.")
+        if float(args.self_check_gamma) <= 1.0:
+            raise ValueError("--self-check-gamma must be > 1.")
+        args.self_check_gamma_effective = float(args.self_check_gamma)
     if bool(args.path_complexity):
         pc_config_path = resolve_path(project_root, args.path_complexity_config, "configs/path_complexity.ini")
         pc_options = load_path_complexity_options(pc_config_path)

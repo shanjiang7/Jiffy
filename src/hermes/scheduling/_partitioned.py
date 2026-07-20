@@ -278,6 +278,66 @@ def _build_runtime_components_and_assignments(
     return runtime_components, rank_assignments
 
 
+def _build_self_check_maps(
+    *,
+    gamma: float,
+    production_level_K: float,
+    production_pred_map: dict[int, list[int]],
+    runtime_components,
+    dag_stage_kwargs: dict,
+) -> dict:
+    """
+    Refinement maps for the self-convergence error estimate.
+
+    Rebuilds the dependency DAG at the tighter threshold level_K / gamma over
+    the SAME runtime components, and keeps only the component pairs that the
+    production DAG neglected. The runtime computes source-off corrections for
+    exactly these extra pairs, superposes them, and reports the rel-L2 between
+    the production and refined snapshots — an a-posteriori estimate of the
+    parallel-vs-serial error that needs no serial reference.
+    """
+    if float(gamma) <= 1.0:
+        raise ValueError("self-check gamma must be > 1.")
+    deep_level_K = float(production_level_K) / float(gamma)
+    deep_stage = _build_dag_stage(
+        dependency_level_K_override=deep_level_K,
+        export_outputs=False,
+        path_complexity_report=False,
+        path_complexity_target_rel_l2=None,
+        **dag_stage_kwargs,
+    )
+    if deep_stage is None:
+        raise RuntimeError("self-check: deep DAG stage produced no supersegments.")
+    deep_pred, _deep_succ, _ = _build_component_dependency_maps(
+        runtime_components=runtime_components,
+        edge_pairs=deep_stage.edge_pairs,
+    )
+    refine_pred: dict[int, list[int]] = {}
+    refine_succ: dict[int, list[int]] = {}
+    n_extra = 0
+    for comp_id, preds in deep_pred.items():
+        extra = sorted(set(preds) - set(production_pred_map.get(int(comp_id), [])))
+        refine_pred[int(comp_id)] = extra
+        n_extra += len(extra)
+        for src in extra:
+            refine_succ.setdefault(int(src), []).append(int(comp_id))
+    for src in refine_succ:
+        refine_succ[src] = sorted(refine_succ[src])
+    horizon_map = _build_correction_horizon_ss_map(
+        runtime_components,
+        cut_depths=deep_stage.cut_depths,
+        ss_per_layer=int(deep_stage.dag_result.ss_per_layer),
+    )
+    return {
+        "gamma": float(gamma),
+        "level_K": float(deep_level_K),
+        "num_extra_edges": int(n_extra),
+        "component_predecessors": refine_pred,
+        "component_successors": refine_succ,
+        "horizon_ss_map": horizon_map,
+    }
+
+
 def build_partitioned_runtime_plan(
     *,
     planner_mode: str,
@@ -297,6 +357,7 @@ def build_partitioned_runtime_plan(
     path_complexity_report: bool = False,
     path_complexity_target_rel_l2: float | None = None,
     dependency_level_K_override: float | None = None,
+    self_check_gamma: float | None = None,
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),
@@ -360,6 +421,32 @@ def build_partitioned_runtime_plan(
         )
     )
 
+    self_check = None
+    if self_check_gamma is not None:
+        self_check = _build_self_check_maps(
+            gamma=float(self_check_gamma),
+            production_level_K=float(dag_stage.dag_result.dependency_level_K),
+            production_pred_map=component_predecessors,
+            runtime_components=runtime_components,
+            dag_stage_kwargs=dict(
+                solver_mode=str(solver_mode),
+                path_config_path=path_config_path,
+                num_layers_override=num_layers_override,
+                dt_s=dt_s,
+                rc=rc,
+                phys=phys,
+                float_type=float_type,
+                solver_velocity_mps=float(solver_velocity_mps),
+                out_dir=out_dir,
+            ),
+        )
+        print(
+            "[self-check] refinement DAG: "
+            f"level_K {float(dag_stage.dag_result.dependency_level_K):.6g} -> "
+            f"{self_check['level_K']:.6g} K (gamma={self_check['gamma']:.3g}), "
+            f"{self_check['num_extra_edges']} extra component pair(s)"
+        )
+
     return {
         "planner_mode": str(planner_mode),
         "global_max_cut_depth": int(max(dag_stage.cut_depths, default=0)),
@@ -385,6 +472,7 @@ def build_partitioned_runtime_plan(
         "split_records": [],
         "segments_per_supersegment": 1,
         "path_complexity": getattr(dag_stage.dag_result, "path_complexity_summary", None),
+        "self_check": self_check,
     }
 
 

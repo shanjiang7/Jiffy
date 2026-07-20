@@ -100,6 +100,7 @@ def build_runtime_plan(
         path_complexity_report=bool(getattr(args, "path_complexity_report", False)),
         path_complexity_target_rel_l2=getattr(args, "path_complexity_target_rel_l2", None),
         dependency_level_K_override=getattr(args, "dependency_level_K_override", None),
+        self_check_gamma=getattr(args, "self_check_gamma_effective", None),
     )
 
 
