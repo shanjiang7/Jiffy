@@ -150,6 +150,18 @@ def parse_args(argv=None):
         help="Threshold tightening factor for the self-check refinement DAG (default: 2.0).",
     )
     p.add_argument(
+        "--self-check-mode",
+        choices=("horizon", "full"),
+        default="horizon",
+        help=(
+            "Refinement mode: 'horizon' (default) extends every connected pair's "
+            "correction by one supersegment per rung - no deep DAGs or lookup "
+            "builds; 'full' additionally rebuilds the DAG at level_K/gamma^k per "
+            "rung and corrects newly connected pairs (audit mode for "
+            "unvalidated DAG configurations)."
+        ),
+    )
+    p.add_argument(
         "--self-check-iters",
         type=int,
         default=1,

@@ -102,6 +102,7 @@ def build_runtime_plan(
         dependency_level_K_override=getattr(args, "dependency_level_K_override", None),
         self_check_gamma=getattr(args, "self_check_gamma_effective", None),
         self_check_iterations=int(getattr(args, "self_check_iters", 1) or 1),
+        self_check_mode=str(getattr(args, "self_check_mode", "horizon")),
     )
 
 

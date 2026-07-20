@@ -282,6 +282,7 @@ def _build_self_check_maps(
     *,
     gamma: float,
     iterations: int,
+    mode: str,
     production_level_K: float,
     production_pred_map: dict[int, list[int]],
     runtime_components,
@@ -302,6 +303,31 @@ def _build_self_check_maps(
         raise ValueError("self-check gamma must be > 1.")
     if int(iterations) < 1:
         raise ValueError("self-check iterations must be >= 1.")
+    mode = str(mode).strip().lower()
+    if mode not in {"horizon", "full"}:
+        raise ValueError(f"self-check mode must be 'horizon' or 'full', got {mode!r}.")
+    if mode == "horizon":
+        # Horizon-only ladder: every rung extends each connected pair's
+        # correction window by one supersegment. No deep DAGs, no new
+        # influence-radius lookups - the cheap production estimator. Empirical
+        # basis: on the straight, hybrid and Bull studies the entire measured
+        # shift was the horizon-extension channel (new-pair contributions were
+        # at numerical-noise level with the validated chord-lookup DAG).
+        return {
+            "gamma": float(gamma),
+            "iterations": int(iterations),
+            "mode": "horizon",
+            "rungs": [
+                {
+                    "level_K": 0.0,
+                    "num_new_pairs": 0,
+                    "component_predecessors": {},
+                    "component_successors": {},
+                    "horizon_ss_map": {},
+                }
+                for _ in range(int(iterations))
+            ],
+        }
     prev_pred = {int(k): sorted(int(v) for v in vs) for k, vs in production_pred_map.items()}
     rungs = []
     for k in range(1, int(iterations) + 1):
@@ -354,6 +380,7 @@ def _build_self_check_maps(
     return {
         "gamma": float(gamma),
         "iterations": int(iterations),
+        "mode": "full",
         "rungs": rungs,
     }
 
@@ -379,6 +406,7 @@ def build_partitioned_runtime_plan(
     dependency_level_K_override: float | None = None,
     self_check_gamma: float | None = None,
     self_check_iterations: int = 1,
+    self_check_mode: str = "horizon",
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),
@@ -447,6 +475,7 @@ def build_partitioned_runtime_plan(
         self_check = _build_self_check_maps(
             gamma=float(self_check_gamma),
             iterations=int(self_check_iterations),
+            mode=str(self_check_mode),
             production_level_K=float(dag_stage.dag_result.dependency_level_K),
             production_pred_map=component_predecessors,
             runtime_components=runtime_components,
@@ -462,15 +491,22 @@ def build_partitioned_runtime_plan(
                 out_dir=out_dir,
             ),
         )
-        rung_desc = ", ".join(
-            f"rung{k+1}: {r['level_K']:.4g}K/+{r['num_new_pairs']}p"
-            for k, r in enumerate(self_check["rungs"])
-        )
-        print(
-            "[self-check] refinement ladder "
-            f"(gamma={self_check['gamma']:.3g}, {self_check['iterations']} iteration(s)): "
-            f"{rung_desc}"
-        )
+        if self_check["mode"] == "horizon":
+            print(
+                "[self-check] horizon-only refinement ladder: "
+                f"{self_check['iterations']} iteration(s), +1 supersegment per rung "
+                "(no deep DAGs/lookups)"
+            )
+        else:
+            rung_desc = ", ".join(
+                f"rung{k+1}: {r['level_K']:.4g}K/+{r['num_new_pairs']}p"
+                for k, r in enumerate(self_check["rungs"])
+            )
+            print(
+                "[self-check] refinement ladder "
+                f"(gamma={self_check['gamma']:.3g}, {self_check['iterations']} iteration(s)): "
+                f"{rung_desc}"
+            )
 
     return {
         "planner_mode": str(planner_mode),

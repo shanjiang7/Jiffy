@@ -844,9 +844,14 @@ def _run_self_check_ladder(
         estimates.append((float(g_max), float(g_rms)))
         total_tracers += int(g_tracers)
         if rank == 0:
+            rung_label = (
+                "horizon-only"
+                if float(rung.get("level_K", 0.0)) <= 0.0
+                else f"refinement level_K={float(rung['level_K']):.6g} K"
+            )
             print(
                 f"[self-check] iter {rung_idx}: estimated rel-L2 of previous iterate "
-                f"(refinement level_K={float(rung['level_K']):.6g} K): "
+                f"({rung_label}): "
                 f"max={g_max:.4e}  rms={g_rms:.4e}  "
                 f"[new-pairs max={g_max_new:.4e}, horizon-ext max={g_max_ext:.4e}]  "
                 f"({int(g_tracers)} correction(s), {int(g_snaps)} snapshot(s))",
