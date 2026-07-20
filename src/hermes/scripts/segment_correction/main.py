@@ -23,10 +23,7 @@ from hermes.scheduling.planning import (
 from hermes.scripts.outer_solver import build_outer_context
 from hermes.scripts.segment_correction.compare_runs import compare_snapshot_dirs
 from hermes.scripts.segment_correction.core import run_parallel_tracer
-from hermes.scripts.segment_correction.diagnostic_config import (
-    load_diagnostic_check_options,
-    load_path_complexity_options,
-)
+from hermes.scripts.segment_correction.diagnostic_config import load_diagnostic_check_options
 from hermes.scripts.segment_correction.output import (
     build_component_start_snapshot_steps,
     build_global_stride_snapshot_steps,
@@ -122,16 +119,6 @@ def parse_args(argv=None):
         type=float,
         default=0.75,
         help="Boundary-correction weight used in the predicted workload model (default: 0.75).",
-    )
-    p.add_argument(
-        "--path-complexity",
-        action="store_true",
-        help="Enable path-complexity threshold adjustment using --path-complexity-config.",
-    )
-    p.add_argument(
-        "--path-complexity-config",
-        default="configs/path_complexity.ini",
-        help="INI file with [path_complexity] settings.",
     )
     p.add_argument(
         "--self-check",
@@ -507,7 +494,6 @@ def main(argv=None):
     out_dir = (project_root / args.out_dir).resolve()
 
     args.path_complexity_report = False
-    args.path_complexity_target_rel_l2 = None
     args.dependency_level_K_override = None
     args.self_check_gamma_effective = None
     if bool(args.self_check):
@@ -518,14 +504,6 @@ def main(argv=None):
         if int(args.self_check_iters) < 1:
             raise ValueError("--self-check-iters must be >= 1.")
         args.self_check_gamma_effective = float(args.self_check_gamma)
-    if bool(args.path_complexity):
-        pc_config_path = resolve_path(project_root, args.path_complexity_config, "configs/path_complexity.ini")
-        pc_options = load_path_complexity_options(pc_config_path)
-        args.path_complexity_report = True
-        args.path_complexity_target_rel_l2 = float(pc_options.target_rel_l2)
-        args.path_complexity_config_path = str(pc_config_path)
-        if rank == 0:
-            print(f"path-complexity config: {pc_config_path}")
 
     diagnostic_options = None
     if bool(args.diagnostic_check):
@@ -578,9 +556,7 @@ def main(argv=None):
     production_level_K = float(production_result["dependency_level_K"])
     buffer_level_K = float(production_level_K) / float(diagnostic_options.gamma)
     buffer_args = argparse.Namespace(**vars(args))
-    buffer_args.path_complexity = False
     buffer_args.path_complexity_report = False
-    buffer_args.path_complexity_target_rel_l2 = None
     buffer_args.dependency_level_K_override = float(buffer_level_K)
 
     if rank == 0:

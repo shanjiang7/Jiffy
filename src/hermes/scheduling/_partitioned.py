@@ -131,7 +131,6 @@ def _build_dag_stage(
     export_outputs: bool,
     out_dir: Path,
     path_complexity_report: bool = False,
-    path_complexity_target_rel_l2: float | None = None,
     dependency_level_K_override: float | None = None,
 ) -> DAGStageResult | None:
     pipeline_cfg = PipelineConfig.from_ini(
@@ -172,7 +171,6 @@ def _build_dag_stage(
         pipeline_cfg,
         lookup_runtime=lookup_runtime,
         path_complexity_report=bool(path_complexity_report),
-        path_complexity_target_rel_l2=path_complexity_target_rel_l2,
     )
     if dag_result is None:
         return None
@@ -338,7 +336,6 @@ def _build_self_check_maps(
             dependency_level_K_override=deep_level_K,
             export_outputs=False,
             path_complexity_report=False,
-            path_complexity_target_rel_l2=None,
             **dag_stage_kwargs,
         )
         if deep_stage is None:
@@ -405,7 +402,6 @@ def build_partitioned_runtime_plan(
     export_outputs: bool = True,
     verify_dp_monotonicity: bool = False,
     path_complexity_report: bool = False,
-    path_complexity_target_rel_l2: float | None = None,
     dependency_level_K_override: float | None = None,
     self_check_gamma: float | None = None,
     self_check_iterations: int = 1,
@@ -424,7 +420,6 @@ def build_partitioned_runtime_plan(
         export_outputs=bool(export_outputs),
         out_dir=out_dir,
         path_complexity_report=bool(path_complexity_report),
-        path_complexity_target_rel_l2=path_complexity_target_rel_l2,
         dependency_level_K_override=dependency_level_K_override,
     )
     if dag_stage is None:

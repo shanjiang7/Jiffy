@@ -21,7 +21,6 @@ from hermes.DAG.dependency import (
     build_r_eps_lookup,
     write_r_eps_lookup_csv,
     build_supersegment_dependency_edges,
-    calibration_epsilon_for_rel_l2,
     calibration_rel_l2_for_epsilon,
     compute_edge_indegree_summary,
 )
@@ -63,7 +62,6 @@ def compute_dag_and_components(
     *,
     lookup_runtime: LookupRuntime | None = None,
     path_complexity_report: bool = False,
-    path_complexity_target_rel_l2: float | None = None,
 ) -> DAGPipelineResult | None:
 
     print("=== Step 1: Building supersegments ===")
@@ -122,7 +120,7 @@ def compute_dag_and_components(
 
     path_complexity_summary = None
     edges = None
-    if path_complexity_report or path_complexity_target_rel_l2 is not None:
+    if path_complexity_report:
         print("=== Step 2b: Estimating path complexity (DAG max in-degree) ===")
         initial_level_K = float(cfg.dependency.model.level_K)
         actual_lseg_mm = float(first_seg.duration_s) * float(first_seg.V_mps) * 1000.0
@@ -174,62 +172,6 @@ def compute_dag_and_components(
             f"calibrated relL2={float(initial_calibration['rel_l2']):.6g}  "
             f"estimated amplified relL2={estimated_amplified_rel_l2:.6g}"
         )
-
-        if path_complexity_target_rel_l2 is not None:
-            target_rel_l2 = float(path_complexity_target_rel_l2)
-            if target_rel_l2 <= 0.0:
-                raise ValueError("--path-complexity-target-rel-l2 must be > 0.")
-            adjusted_local_rel_l2 = float(target_rel_l2) / float(A_for_budget)
-            adjusted_calibration = calibration_epsilon_for_rel_l2(adjusted_local_rel_l2)
-            adjusted_level_K = float(adjusted_calibration["level_K"])
-            print(
-                "  "
-                f"target relL2={target_rel_l2:.6g} -> local relL2={adjusted_local_rel_l2:.6g} "
-                f"using A_for_budget={A_for_budget}"
-            )
-            print(f"  adjusted level_K={adjusted_level_K:.6g} K; rebuilding lookup/DAG")
-
-            adjusted_model = replace(cfg.dependency.model, level_K=adjusted_level_K)
-            cfg = replace(cfg, dependency=replace(cfg.dependency, model=adjusted_model))
-            lookup = build_r_eps_lookup(
-                model=cfg.dependency.model,
-                dt_s=lookup_dt_s,
-                V_mps=first_seg.V_mps,
-                P_W=first_seg.power_W,
-                max_steps=max_steps,
-                backend="numerical",
-                runtime=lookup_runtime,
-            )
-            if len(lookup.r_eps_m) < max_steps + 1:
-                print(
-                    f"  adjusted r_eps converged at step {len(lookup.r_eps_m) - 1} "
-                    f"({(len(lookup.r_eps_m) - 1) * lookup_dt_s * 1e3:.2f} ms) – stopped early"
-                )
-            edges = build_supersegment_dependency_edges(
-                supersegments,
-                model=cfg.dependency.model,
-                lookup=lookup,
-                back_window=cfg.dag.back_window,
-            )
-            adjusted_indegree = compute_edge_indegree_summary(edges, n_ss)
-            path_complexity_summary.update(
-                {
-                    "target_rel_l2": float(target_rel_l2),
-                    "adjusted_local_rel_l2": float(adjusted_local_rel_l2),
-                    "adjusted_level_K": float(adjusted_level_K),
-                    "adjusted_calibration": adjusted_calibration,
-                    "adjusted_A_path": int(adjusted_indegree.get("A_path", 0)),
-                    "adjusted_mean_predecessors_within_radius": float(
-                        adjusted_indegree.get("mean_indegree", 0.0)
-                    ),
-                    "adjusted_lookup_rebuilt": True,
-                }
-            )
-            print(
-                "  "
-                f"adjusted A_path={int(path_complexity_summary['adjusted_A_path'])}  "
-                f"mean={float(path_complexity_summary['adjusted_mean_predecessors_within_radius']):.2f}"
-            )
 
     print("=== Step 3: Building dependency DAG ===")
     if edges is None:

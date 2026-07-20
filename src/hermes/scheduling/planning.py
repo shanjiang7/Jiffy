@@ -58,10 +58,6 @@ def build_planning_summary(
     }
     if search_summary is not None:
         summary["auto_search"] = search_summary
-    if bool(getattr(args, "path_complexity", False)):
-        summary["path_complexity_enabled"] = True
-        if hasattr(args, "path_complexity_config_path"):
-            summary["path_complexity_config"] = str(args.path_complexity_config_path)
     if getattr(args, "dependency_level_K_override", None) is not None:
         summary["dependency_level_K_override"] = float(args.dependency_level_K_override)
     if runtime_plan.get("path_complexity") is not None:
@@ -98,7 +94,6 @@ def build_runtime_plan(
         export_outputs=bool(export_outputs),
         verify_dp_monotonicity=bool(getattr(args, "verify_dp_monotonicity", False)),
         path_complexity_report=bool(getattr(args, "path_complexity_report", False)),
-        path_complexity_target_rel_l2=getattr(args, "path_complexity_target_rel_l2", None),
         dependency_level_K_override=getattr(args, "dependency_level_K_override", None),
         self_check_gamma=getattr(args, "self_check_gamma_effective", None),
         self_check_iterations=int(getattr(args, "self_check_iters", 1) or 1),

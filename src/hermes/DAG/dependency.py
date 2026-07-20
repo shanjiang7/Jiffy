@@ -64,26 +64,6 @@ def _interp_loglog(x: float, xs: np.ndarray, ys: np.ndarray) -> tuple[float, boo
     return float(np.exp(log_y)), extrapolated
 
 
-def calibration_epsilon_for_rel_l2(target_rel_l2: float) -> dict:
-    """Map target relative L2 error to epsilon/level_K using the built-in table."""
-    epsilon_K, clipped = _interp_loglog(
-        float(target_rel_l2),
-        CALIBRATION_REL_L2,
-        CALIBRATION_EPSILON_K,
-    )
-    implied_lseg_mm, lseg_clipped = _interp_loglog(
-        float(target_rel_l2),
-        CALIBRATION_REL_L2,
-        CALIBRATION_LSEG_MM,
-    )
-    return {
-        "target_rel_l2": float(target_rel_l2),
-        "level_K": float(epsilon_K),
-        "calibration_lseg_mm": float(implied_lseg_mm),
-        "extrapolated": bool(clipped or lseg_clipped),
-        "table": "builtin_lseg_epsilon_rel_l2",
-    }
-
 
 def calibration_rel_l2_for_epsilon(epsilon_K: float) -> dict:
     """Map epsilon/level_K to relative L2 error using the built-in table."""
@@ -888,7 +868,7 @@ __all__ = [
     "build_r_eps_lookup", "build_r_eps_lookup_numerical",
     "write_r_eps_lookup_csv",
     "aabb_distance_nd", "aabb_distance_m",
-    "calibration_epsilon_for_rel_l2", "calibration_rel_l2_for_epsilon",
+    "calibration_rel_l2_for_epsilon",
     "build_supersegment_dependency_edges",
     "compute_edge_indegree_summary",
     "build_adjacency",

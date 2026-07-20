@@ -22,7 +22,6 @@ from hermes.scheduling.planning import (
     print_run_summary,
     print_split_records,
 )
-from hermes.scripts.segment_correction.diagnostic_config import load_path_complexity_options
 from hermes.utils.path_utils import resolve_path
 
 
@@ -76,29 +75,9 @@ def parse_args(argv=None):
         ),
     )
     p.add_argument(
-        "--path-complexity",
-        action="store_true",
-        help="Enable path-complexity threshold adjustment using --path-complexity-config.",
-    )
-    p.add_argument(
-        "--path-complexity-config",
-        default="configs/path_complexity.ini",
-        help="INI file with [path_complexity] settings.",
-    )
-    p.add_argument(
         "--path-complexity-report",
         action="store_true",
-        help="Compute and print A_path without changing the configured level_K.",
-    )
-    p.add_argument(
-        "--path-complexity-target-rel-l2",
-        type=float,
-        default=None,
-        help=(
-            "Target global relative L2 error. If set, compute A_path, use "
-            "local_target=target/A_path with the built-in calibration table, "
-            "update level_K, and rebuild the DAG."
-        ),
+        help="Compute and print A_path (max in-degree of the retained DAG).",
     )
     return p.parse_args(argv)
 
@@ -115,13 +94,6 @@ def main(argv=None):
 
     path_config_path = resolve_path(project_root, args.path_config, "")
     out_dir = (project_root / args.out_dir).resolve()
-    if bool(args.path_complexity):
-        pc_config_path = resolve_path(project_root, args.path_complexity_config, "configs/path_complexity.ini")
-        pc_options = load_path_complexity_options(pc_config_path)
-        args.path_complexity_report = True
-        args.path_complexity_target_rel_l2 = float(pc_options.target_rel_l2)
-        args.path_complexity_config_path = str(pc_config_path)
-        print(f"path-complexity config: {pc_config_path}")
 
     print("=== Planning-Only Segment Correction Preview ===")
     print(f"world_size (emulated ranks): {args.world_size}")
@@ -179,28 +151,6 @@ def main(argv=None):
                 f"estimated_A_times_rel_l2="
                 f"{float(path_complexity.get('estimated_amplified_rel_l2', 0.0)):.6g}"
             )
-        if "target_rel_l2" in path_complexity:
-            initial_dag = path_complexity.get("initial_dag", {})
-            final_dag = path_complexity.get("final_dag", {})
-            if initial_dag:
-                print(
-                    "[path-complexity] "
-                    f"initial_max_cut_depth={int(initial_dag.get('global_max_cut_depth', 0))} "
-                    f"initial_edges={int(initial_dag.get('num_edges', 0))}"
-                )
-            print(
-                "[path-complexity] "
-                f"target_rel_l2={float(path_complexity['target_rel_l2']):.6g} "
-                f"local_rel_l2={float(path_complexity['adjusted_local_rel_l2']):.6g} "
-                f"adjusted_level_K={float(path_complexity['adjusted_level_K']):.6g} "
-                f"adjusted_A_path={int(path_complexity.get('adjusted_A_path', 0))}"
-            )
-            if final_dag:
-                print(
-                    "[path-complexity] "
-                    f"final_max_cut_depth={int(final_dag.get('global_max_cut_depth', 0))} "
-                    f"final_edges={int(final_dag.get('num_edges', 0))}"
-                )
     partition_seconds = runtime_plan["partition_summary"].get("partition_seconds")
     if partition_seconds is not None:
         print(
