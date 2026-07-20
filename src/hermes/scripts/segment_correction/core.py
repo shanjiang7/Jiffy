@@ -741,19 +741,27 @@ def _run_self_check_ladder(
                     _trace(j, x0, y0, legs, max_steps, ext_steps) if ext_steps else [],
                 )
 
-        # expected refinement sources for each owned target this rung
+        # expected refinement sources for each owned target this rung;
+        # channel attribution: "new" = pairs first connected this rung,
+        # "ext" = horizon extensions of previously connected pairs.
         local_sq_num = 0.0
         local_sq_den = 0.0
         local_max_rel = 0.0
+        local_max_rel_new = 0.0
+        local_max_rel_ext = 0.0
         local_n_snaps = 0
         refined_states: Dict[int, List[np.ndarray]] = {}
         for j in assigned_comps:
-            srcs = list(rung_pred.get(int(j), []))
+            new_srcs = set(rung_pred.get(int(j), []))
+            srcs = list(new_srcs)
             if horizon_next[int(j)] > horizon_now[int(j)]:
                 srcs.extend(int(v) for v in connected_pred.get(int(j), set()))
             srcs = sorted(set(srcs))
             production = current.get(int(j), [])
             refined = [np.array(snap, copy=True) for snap in production]
+            # per-channel accumulated deltas for attribution
+            chan_new = [np.zeros_like(snap, dtype=np.float64) for snap in production]
+            chan_ext = [np.zeros_like(snap, dtype=np.float64) for snap in production]
             for pred_j in srcs:
                 src_rank = int(comp_to_rank[int(pred_j)])
                 if int(src_rank) == int(rank):
@@ -768,17 +776,25 @@ def _run_self_check_ladder(
                         source_rank=int(src_rank),
                         tag=int(j),
                     )
+                chan = chan_new if int(pred_j) in new_srcs else chan_ext
                 for k2, delta in enumerate(deltas):
                     idx = int(offset) + int(k2)
                     if idx >= len(refined):
                         break
                     refined[idx] = refined[idx] + delta
+                    chan[idx] += delta.astype(np.float64)
             refined_states[int(j)] = refined
-            for old_snap, new_snap in zip(production, refined):
+            for snap_idx, (old_snap, new_snap) in enumerate(zip(production, refined)):
                 diff = new_snap.astype(np.float64) - old_snap.astype(np.float64)
                 den = float(np.linalg.norm(new_snap.astype(np.float64)))
-                rel = float(np.linalg.norm(diff)) / max(den, 1e-30)
-                local_max_rel = max(local_max_rel, rel)
+                den_safe = max(den, 1e-30)
+                local_max_rel = max(local_max_rel, float(np.linalg.norm(diff)) / den_safe)
+                local_max_rel_new = max(
+                    local_max_rel_new, float(np.linalg.norm(chan_new[snap_idx])) / den_safe
+                )
+                local_max_rel_ext = max(
+                    local_max_rel_ext, float(np.linalg.norm(chan_ext[snap_idx])) / den_safe
+                )
                 local_sq_num += float(np.dot(diff.ravel(), diff.ravel()))
                 local_sq_den += den * den
                 local_n_snaps += 1
@@ -787,6 +803,8 @@ def _run_self_check_ladder(
             req.wait()
 
         g_max = comm_sc.allreduce(local_max_rel, op=MPI.MAX)
+        g_max_new = comm_sc.allreduce(local_max_rel_new, op=MPI.MAX)
+        g_max_ext = comm_sc.allreduce(local_max_rel_ext, op=MPI.MAX)
         g_num = comm_sc.allreduce(local_sq_num, op=MPI.SUM)
         g_den = comm_sc.allreduce(local_sq_den, op=MPI.SUM)
         g_snaps = comm_sc.allreduce(local_n_snaps, op=MPI.SUM)
@@ -799,6 +817,7 @@ def _run_self_check_ladder(
                 f"[self-check] iter {rung_idx}: estimated rel-L2 of previous iterate "
                 f"(refinement level_K={float(rung['level_K']):.6g} K): "
                 f"max={g_max:.4e}  rms={g_rms:.4e}  "
+                f"[new-pairs max={g_max_new:.4e}, horizon-ext max={g_max_ext:.4e}]  "
                 f"({int(g_tracers)} correction(s), {int(g_snaps)} snapshot(s))",
                 flush=True,
             )
