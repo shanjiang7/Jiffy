@@ -41,7 +41,7 @@ SIM_CONFIG=configs/examples/sim_calibration.ini
 CFG=configs/accuracy/bull_tol1e4.ini
 ROOT=outputs/accuracy_bull_tol1e4_h30
 SNAP_EVERY=25
-ITERS=6
+ITERS=3
 
 if [ ! -d "${ROOT}/serial/snapshots_ser" ]; then
   echo "ERROR: serial reference ${ROOT}/serial missing" >&2

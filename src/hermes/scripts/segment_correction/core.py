@@ -713,19 +713,25 @@ def _run_self_check_ladder(
             for k, vs in rung["component_successors"].items()
         }
         rung_deep_horizon = {int(k): int(v) for k, v in rung["horizon_ss_map"].items()}
-        # Target horizon this rung: the rung DAG's horizon (full mode) or, at
-        # minimum, a geometrically growing advance (+2^(k-1) supersegments):
-        # +1, +2, +4, ... so a few rungs sweep the whole thermal tail. A fixed
-        # +1 advance walks long tails with tier ratio ~1 (measured on the
-        # 31-cut hybrid/Bull studies) and under-reads the first-rung estimate.
-        floor_step = 1 << (int(rung_idx) - 1)
+        horizon_only = float(rung.get("level_K", 0.0)) <= 0.0
         horizon_next: Dict[int, int] = {}
         for c in all_comp_ids:
             w = int(path_def_by_id[int(c)].weight)
-            deep_h = _effective_horizon_ss(rung_deep_horizon, int(c), w)
-            horizon_next[int(c)] = min(
-                int(w), max(int(deep_h), int(horizon_now[int(c)]) + int(floor_step))
-            )
+            if horizon_only:
+                # Saturating schedule: rung 1 extends every connected pair's
+                # correction to the target's FULL extent, capturing the entire
+                # truncated-tail error in one shot (d_1 ~ e_0); later rungs
+                # have nothing left and verify convergence (~0), making the
+                # shift sequence monotone by construction. Fixed-step
+                # schedules cannot promise that: slice magnitudes follow the
+                # path's revisit geometry (measured on the 31-cut Bull:
+                # 8.4e-6 -> 8.4e-5 -> 1.1e-4 with +1 supersegment per rung).
+                horizon_next[int(c)] = int(w)
+            else:
+                deep_h = _effective_horizon_ss(rung_deep_horizon, int(c), w)
+                horizon_next[int(c)] = min(
+                    int(w), max(int(deep_h), int(horizon_now[int(c)]) + 1)
+                )
 
         send_reqs: list[object] = []
         local_deltas: Dict[int, Dict[int, tuple[int, List[np.ndarray]]]] = {}
