@@ -45,7 +45,7 @@ def _prepare_exact_dp_cost_data(
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
     cut_depths: list[int] | None = None,
 ) -> tuple[float, list[dict], list[list[float]]]:
     total_base_work, outgoing_corrections, prefix_sums = _prepare_dp_work_model(
@@ -76,7 +76,7 @@ def _prepare_dp_work_model(
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
     cut_depths: list[int] | None = None,
 ) -> tuple[float, list[dict], list[float]]:
     if int(n_ss) <= 0:
@@ -340,7 +340,7 @@ def partition_supersegments_exact_dp(
     *,
     num_processors: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
     cut_depths: list[int] | None = None,
     verify_monotonicity: bool = False,
 ) -> dict:
@@ -431,7 +431,7 @@ def partition_supersegments_monotone_dp(
     *,
     num_processors: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
     cut_depths: list[int] | None = None,
     verify_monotonicity: bool = False,
 ) -> dict:
@@ -532,7 +532,7 @@ def direct_partition_dag_n1(
     edge_pairs: list[tuple[int, int]],
     *,
     num_processors: int,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
     cut_depths: list[int] | None = None,
 ) -> dict:
     if int(n_ss) < 0:

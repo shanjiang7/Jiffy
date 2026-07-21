@@ -20,7 +20,7 @@ def _boundary_cut_correction_from_depth(
     *,
     cut_depth: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.75,
+    correction_weight: float = 0.25,
 ) -> dict:
     correction_span_ss = float(max(0, int(cut_depth)))
     correction_span_segments = float(correction_span_ss) * float(segments_per_supersegment)

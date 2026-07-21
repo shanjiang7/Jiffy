@@ -46,8 +46,15 @@ def parse_args(argv=None):
     p.add_argument(
         "--correction-weight",
         type=float,
-        default=0.75,
-        help="Boundary-correction weight used in the predicted workload model (default: 0.75).",
+        default=0.25,
+        help=(
+            "Boundary-correction weight used in the predicted workload model: the cost "
+            "of a segment of source-off correction stepping relative to a segment "
+            "of source-on base stepping. Default 0.25 is the measured ratio on the "
+            "h = 18 um production grid (dev/bench_source_on_off.py: 0.232; 0.368 at "
+            "h = 30 um, 0.625 at h = 40 um -- source-off is dominated by fixed "
+            "per-step overhead, so the ratio falls as the grid refines)."
+        ),
     )
     p.add_argument(
         "--snap-every-steps",
