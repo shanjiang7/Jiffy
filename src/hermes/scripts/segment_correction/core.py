@@ -149,6 +149,79 @@ def _build_bridge_run(
     )
 
 
+def _build_fused_bridge_run(
+    *,
+    src_component: int,
+    dst_components: List[int],
+    ordered_component_ids: list[int],
+    component_index: dict[int, int],
+    path_def_by_id: Dict[int, PathDef],
+    steps_per_ss: int,
+    snapshot_stride_steps: int | None,
+    snapshot_steps_by_component: Dict[int, List[int]] | None,
+    correction_horizon_ss_map: Dict[int, int] | None,
+) -> tuple[float, float, list, int, list[int], Dict[int, List[int]]]:
+    """One source-off tracer covering every successor of ``src_component``.
+
+    All of a component's bridges start from the same end state and follow the
+    same legs, so the bridge to a nearer successor is a strict prefix of the
+    bridge to a farther one. Tracing each successor separately re-simulates
+    that shared prefix once per successor; instead we trace once to the
+    farthest successor and record each successor's snapshot steps as we pass
+    its window. Per-successor snapshot steps are taken from
+    :func:`_build_bridge_run` unchanged, so the captured fields are identical
+    to what the per-successor runs produced.
+
+    Returns the fused run plus the union of snapshot steps to capture and the
+    per-successor step lists needed to demultiplex the result.
+    """
+    if not dst_components:
+        raise ValueError("dst_components must be non-empty")
+
+    per_dst_steps: Dict[int, List[int]] = {}
+    x_start = 0.0
+    y_start = 0.0
+    bridge_legs: list = []
+    max_tracer_steps = 0
+    for dst in dst_components:
+        (
+            dst_x_start,
+            dst_y_start,
+            dst_legs,
+            dst_max_steps,
+            dst_snapshot_steps,
+            _gap_steps,
+        ) = _build_bridge_run(
+            src_component=int(src_component),
+            dst_component=int(dst),
+            ordered_component_ids=ordered_component_ids,
+            component_index=component_index,
+            path_def_by_id=path_def_by_id,
+            steps_per_ss=steps_per_ss,
+            snapshot_stride_steps=snapshot_stride_steps,
+            snapshot_steps_by_component=snapshot_steps_by_component,
+            correction_horizon_ss_map=correction_horizon_ss_map,
+        )
+        per_dst_steps[int(dst)] = list(dst_snapshot_steps)
+        max_tracer_steps = max(int(max_tracer_steps), int(dst_max_steps))
+        # The farthest successor owns the longest leg list; every shorter
+        # bridge is a prefix of it, and all share a start point.
+        if len(dst_legs) > len(bridge_legs):
+            bridge_legs = dst_legs
+            x_start = float(dst_x_start)
+            y_start = float(dst_y_start)
+
+    union_steps = sorted({int(s) for steps in per_dst_steps.values() for s in steps})
+    return (
+        float(x_start),
+        float(y_start),
+        bridge_legs,
+        int(max_tracer_steps),
+        union_steps,
+        per_dst_steps,
+    )
+
+
 def _snapshot_steps_for_component(
     component_id: int,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
@@ -407,17 +480,21 @@ def run_parallel_tracer(
         if self_check_active and int(j) in self_check_emitters:
             end_states_host[int(j)] = cp.asnumpy(final_u)
 
-        for succ_j in succ_map.get(int(j), []):
+        succ_list = list(succ_map.get(int(j), []))
+        if succ_list:
+            # One tracer serves every successor: their bridges share a start
+            # state and a leg prefix, so a separate run per successor would
+            # re-simulate that prefix. See _build_fused_bridge_run.
             (
                 bridge_x_start,
                 bridge_y_start,
                 bridge_legs,
                 max_tracer_steps,
-                bridge_snapshot_steps,
-                _gap_steps,
-            ) = _build_bridge_run(
+                union_snapshot_steps,
+                per_succ_snapshot_steps,
+            ) = _build_fused_bridge_run(
                 src_component=int(j),
-                dst_component=int(succ_j),
+                dst_components=[int(s) for s in succ_list],
                 ordered_component_ids=ordered_component_ids,
                 component_index=component_index,
                 path_def_by_id=path_def_by_id,
@@ -426,7 +503,7 @@ def run_parallel_tracer(
                 snapshot_steps_by_component=snapshot_steps_by_component,
                 correction_horizon_ss_map=correction_horizon_ss_map,
             )
-            delta_snaps_host: List[np.ndarray] = []
+            captured_snaps_host: List[np.ndarray] = []
             tracer_t0 = time.perf_counter()
             _, _ = run_ss_outer(
                 ctx,
@@ -438,8 +515,8 @@ def run_parallel_tracer(
                 source_on=False,
                 max_steps=max_tracer_steps,
                 snapshot_stride_steps=snapshot_stride_steps,
-                snapshot_steps=bridge_snapshot_steps,
-                snapshot_callback=lambda snap_u, out=delta_snaps_host: _append_host_delta_snapshot(
+                snapshot_steps=union_snapshot_steps,
+                snapshot_callback=lambda snap_u, out=captured_snaps_host: _append_host_delta_snapshot(
                     out,
                     snap_u,
                     ambient_gpu=ambient_gpu,
@@ -451,20 +528,38 @@ def run_parallel_tracer(
             )
             cp.cuda.Stream.null.synchronize()
             timing_stats["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
-            dst_rank = int(comp_to_rank[int(succ_j)])
-            if int(dst_rank) == int(rank):
-                if collect_output_snapshots:
-                    local_correction_snaps.setdefault(int(succ_j), {})[int(j)] = delta_snaps_host
-                timing_stats["num_local_corrections"] += 1.0
-            else:
-                _enqueue_correction_send(
-                    comm=comm,
-                    dest_rank=int(dst_rank),
-                    tag=int(succ_j),
-                    delta_snaps_host=delta_snaps_host,
-                    send_reqs=send_reqs,
+            if len(captured_snaps_host) != len(union_snapshot_steps):
+                raise RuntimeError(
+                    f"Fused bridge tracer for component {int(j)} captured "
+                    f"{len(captured_snaps_host)} snapshots, expected "
+                    f"{len(union_snapshot_steps)}."
                 )
-                timing_stats["num_remote_sends"] += 1.0
+            snap_index_by_step = {
+                int(step): idx for idx, step in enumerate(union_snapshot_steps)
+            }
+
+            for succ_j in succ_list:
+                # Demultiplex: hand each successor the snapshots taken inside
+                # its own window. Successors whose windows overlap share the
+                # array; both consumers treat corrections as read-only.
+                delta_snaps_host = [
+                    captured_snaps_host[snap_index_by_step[int(step)]]
+                    for step in per_succ_snapshot_steps[int(succ_j)]
+                ]
+                dst_rank = int(comp_to_rank[int(succ_j)])
+                if int(dst_rank) == int(rank):
+                    if collect_output_snapshots:
+                        local_correction_snaps.setdefault(int(succ_j), {})[int(j)] = delta_snaps_host
+                    timing_stats["num_local_corrections"] += 1.0
+                else:
+                    _enqueue_correction_send(
+                        comm=comm,
+                        dest_rank=int(dst_rank),
+                        tag=int(succ_j),
+                        delta_snaps_host=delta_snaps_host,
+                        send_reqs=send_reqs,
+                    )
+                    timing_stats["num_remote_sends"] += 1.0
 
     cp.cuda.Stream.null.synchronize()
     timing_stats["pipeline_loop_seconds"] = time.perf_counter() - loop_t0

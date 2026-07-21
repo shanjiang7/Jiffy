@@ -9,8 +9,8 @@ import numpy as np
 from hermes.motion.types import PathDef
 from hermes.scripts.outer_solver import OuterContext, run_ss_outer
 from hermes.scripts.segment_correction.core import (
-    _build_bridge_run,
     _build_component_index,
+    _build_fused_bridge_run,
     _normalise_dependency_maps,
     _snapshot_steps_for_component,
     _superpose_correction_lists,
@@ -198,57 +198,79 @@ def run_emulated_parallel_tracer(
                 continue
 
             captured_any_for_export = False
-            for succ_j in succ_map.get(int(j), []):
-                (
-                    bridge_x_start,
-                    bridge_y_start,
-                    bridge_legs,
-                    max_tracer_steps,
-                    bridge_snapshot_steps,
-                ) = _build_bridge_run(
-                    src_component=int(j),
-                    dst_component=int(succ_j),
-                    ordered_component_ids=ordered_component_ids,
-                    component_index=component_index,
-                    path_def_by_id=path_def_by_id,
-                    steps_per_ss=steps_per_ss,
-                    snapshot_stride_steps=snapshot_stride_steps,
-                    snapshot_steps_by_component=snapshot_steps_by_component,
-                    correction_horizon_ss_map=correction_horizon_ss_map,
-                )
-                delta_snaps_host: List[np.ndarray] = []
-                tracer_t0 = time.perf_counter()
-                _, _ = run_ss_outer(
-                    ctx,
-                    final_u,
-                    bridge_x_start,
-                    bridge_y_start,
-                    bridge_legs,
-                    steps_per_ss,
-                    source_on=False,
-                    max_steps=max_tracer_steps,
-                    snapshot_stride_steps=snapshot_stride_steps,
-                    snapshot_steps=bridge_snapshot_steps,
-                    snapshot_callback=(
-                        lambda snap_u,
-                        out=delta_snaps_host,
+            succ_list = list(succ_map.get(int(j), []))
+            if not succ_list:
+                del final_u
+                _release_cupy_temporaries()
+                continue
+
+            # One tracer serves every successor; see _build_fused_bridge_run.
+            (
+                bridge_x_start,
+                bridge_y_start,
+                bridge_legs,
+                max_tracer_steps,
+                union_snapshot_steps,
+                per_succ_snapshot_steps,
+            ) = _build_fused_bridge_run(
+                src_component=int(j),
+                dst_components=[int(s) for s in succ_list],
+                ordered_component_ids=ordered_component_ids,
+                component_index=component_index,
+                path_def_by_id=path_def_by_id,
+                steps_per_ss=steps_per_ss,
+                snapshot_stride_steps=snapshot_stride_steps,
+                snapshot_steps_by_component=snapshot_steps_by_component,
+                correction_horizon_ss_map=correction_horizon_ss_map,
+            )
+            captured_snaps_host: List[np.ndarray] = []
+            tracer_t0 = time.perf_counter()
+            _, _ = run_ss_outer(
+                ctx,
+                final_u,
+                bridge_x_start,
+                bridge_y_start,
+                bridge_legs,
+                steps_per_ss,
+                source_on=False,
+                max_steps=max_tracer_steps,
+                snapshot_stride_steps=snapshot_stride_steps,
+                snapshot_steps=union_snapshot_steps,
+                snapshot_callback=(
+                    lambda snap_u,
+                    out=captured_snaps_host,
+                    ambient_gpu=ambient_gpu,
+                    nx=int(ctx.nx),
+                    ny=int(ctx.ny),
+                    nz=int(ctx.nz),
+                    h_m=h_m: _append_host_delta_snapshot(
+                        out,
+                        snap_u,
                         ambient_gpu=ambient_gpu,
-                        nx=int(ctx.nx),
-                        ny=int(ctx.ny),
-                        nz=int(ctx.nz),
-                        h_m=h_m: _append_host_delta_snapshot(
-                            out,
-                            snap_u,
-                            ambient_gpu=ambient_gpu,
-                            nx=nx,
-                            ny=ny,
-                            nz=nz,
-                            h_m=h_m,
-                        )
-                    ),
+                        nx=nx,
+                        ny=ny,
+                        nz=nz,
+                        h_m=h_m,
+                    )
+                ),
+            )
+            cp.cuda.Stream.null.synchronize()
+            rank_timing_stats[int(rank)]["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
+            if len(captured_snaps_host) != len(union_snapshot_steps):
+                raise RuntimeError(
+                    f"Fused bridge tracer for component {int(j)} captured "
+                    f"{len(captured_snaps_host)} snapshots, expected "
+                    f"{len(union_snapshot_steps)}."
                 )
-                cp.cuda.Stream.null.synchronize()
-                rank_timing_stats[int(rank)]["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
+            snap_index_by_step = {
+                int(step): idx for idx, step in enumerate(union_snapshot_steps)
+            }
+
+            for succ_j in succ_list:
+                delta_snaps_host = [
+                    captured_snaps_host[snap_index_by_step[int(step)]]
+                    for step in per_succ_snapshot_steps[int(succ_j)]
+                ]
                 correction_payloads.setdefault(int(succ_j), {})[int(j)] = delta_snaps_host
                 captured_for_export = correction_payloads_out is not None and (
                     capture_correction_components_norm is None
