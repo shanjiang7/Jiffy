@@ -54,9 +54,14 @@ esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
 DT_US=10
-# Boundary-correction weight of the predicted workload model. Pinned to the
-# solver default (0.75), the same value used by the accuracy studies.
-CORRECTION_WEIGHT=0.75
+# Boundary-correction weight of the predicted workload model: the cost of a
+# segment of source-off correction stepping relative to a segment of source-on
+# base stepping. Measured directly on this grid with dev/bench_source_on_off.py
+# (job 852855): source-off/source-on = 0.232 at h = 18 um (0.368 at h = 30 um,
+# 0.625 at h = 40 um -- source-off is dominated by fixed per-step overhead, so
+# the ratio falls as the grid refines). 0.25 is the measured value rounded, and
+# matches the setting used for the published strong-scaling figure.
+CORRECTION_WEIGHT=0.25
 RANK_SWEEP=${RANK_SWEEP:-"1 2 3 4 5 6 7 8"}
 PLANNER_MODES=${PLANNER_MODES:-"uniform exact_dp"}
 RUN_ROOT=outputs/strong_scaling_h18/${PATH_NAME}
