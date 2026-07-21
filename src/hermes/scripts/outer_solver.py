@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable
 
 import cupy as cp
-import cupyx.scipy.sparse.linalg as cspla
 import numpy as np
 
 from hermes.motion.executor import (
@@ -18,11 +17,9 @@ from hermes.motion.executor import (
 from hermes.motion.types import PathLeg
 from hermes.grids.sim_params import init_level3_outer
 from hermes.kernels.cg_update_cuda import call_cg_update_xr_reduce_rr
-from hermes.kernels.matvec import mv_level3_dirichlet
 from hermes.kernels.matvec_cuda import call_mv_level3_dirichlet_with_dot_update_p
 from hermes.kernels.rhs_matvec_fused_cuda import call_rhs_matvec_level3_fused_init
-from hermes.kernels.rhs import rhs_level3_dirichlet
-from hermes.runtime.gpu_setup import launch_3d, launch_3d_xyz
+from hermes.runtime.gpu_setup import launch_3d_xyz
 
 _L3_TX = 32
 _L3_TY = 4
@@ -35,14 +32,6 @@ _MOVEMENT_CACHE_MAX_ENTRIES = 16
 
 _FUSED_ZERO_ITER_RTOL_F64 = 1e-12
 _FUSED_ZERO_ITER_RTOL_F32 = 1e-6
-
-
-@dataclass
-class _LegacyState:
-    A: cspla.LinearOperator
-    result: cp.ndarray
-    blocks: int
-    threads: int
 
 
 @dataclass
@@ -79,8 +68,7 @@ class OuterContext:
     solver_mode: str
     cg_tol: float
     cg_max_iter: int
-    fused: Optional[_FusedState]
-    legacy: Optional[_LegacyState]
+    fused: _FusedState
 
 
 def build_outer_context(
@@ -91,8 +79,10 @@ def build_outer_context(
     solver_mode: str = "fused",
 ) -> OuterContext:
     solver_mode = str(solver_mode).lower()
-    if solver_mode not in {"legacy", "fused"}:
-        raise ValueError(f"Unknown solver_mode='{solver_mode}', expected 'legacy' or 'fused'.")
+    if solver_mode != "fused":
+        raise ValueError(
+            f"Unknown solver_mode='{solver_mode}'; only 'fused' is supported."
+        )
 
     outer = init_level3_outer(
         phys=phys,
@@ -120,41 +110,18 @@ def build_outer_context(
     n_all = nx * ny * nz
     b = cp.empty((n_all,), dtype=float_type)
 
-    if solver_mode == "fused":
-        fused_blocks, fused_threads = launch_3d_xyz(nx, ny, nz, tx=_L3_TX, ty=_L3_TY, tz=_L3_TZ)
-        fused = _FusedState(
-            x=cp.empty((n_all,), dtype=float_type),
-            r=cp.empty((n_all,), dtype=float_type),
-            p=cp.empty((n_all,), dtype=float_type),
-            p_tmp=cp.empty((n_all,), dtype=float_type),
-            ap=cp.empty((n_all,), dtype=float_type),
-            pap_buf=cp.empty((1,), dtype=cp.float64),
-            rr_buf=cp.empty((1,), dtype=cp.float64),
-            blocks=fused_blocks,
-            threads=fused_threads,
-        )
-        legacy = None
-    else:
-        leg_blocks, leg_threads = launch_3d(nx, ny, nz)
-        leg_result = cp.empty((n_all,), dtype=float_type)
-        n2 = float(phys.n2)
-
-        def legacy_mv(v):
-            mv_level3_dirichlet[leg_blocks, leg_threads](
-                nx, ny, nz,
-                v, leg_result,
-                h_isq, h_isq, h_isq,
-                dt05_nd, n2, u0, h,
-            )
-            return leg_result
-
-        legacy = _LegacyState(
-            A=cspla.LinearOperator((n_all, n_all), matvec=legacy_mv, dtype=float_type),
-            result=leg_result,
-            blocks=leg_blocks,
-            threads=leg_threads,
-        )
-        fused = None
+    fused_blocks, fused_threads = launch_3d_xyz(nx, ny, nz, tx=_L3_TX, ty=_L3_TY, tz=_L3_TZ)
+    fused = _FusedState(
+        x=cp.empty((n_all,), dtype=float_type),
+        r=cp.empty((n_all,), dtype=float_type),
+        p=cp.empty((n_all,), dtype=float_type),
+        p_tmp=cp.empty((n_all,), dtype=float_type),
+        ap=cp.empty((n_all,), dtype=float_type),
+        pap_buf=cp.empty((1,), dtype=cp.float64),
+        rr_buf=cp.empty((1,), dtype=cp.float64),
+        blocks=fused_blocks,
+        threads=fused_threads,
+    )
 
     return OuterContext(
         nx=nx,
@@ -177,7 +144,6 @@ def build_outer_context(
         cg_tol=float(rc.solver.cg_tol_level3),
         cg_max_iter=int(rc.solver.cg_max_iter_level3),
         fused=fused,
-        legacy=legacy,
     )
 
 
@@ -186,30 +152,8 @@ def _solve_one_step(
     u: cp.ndarray,
     qs: cp.ndarray,
 ) -> cp.ndarray:
-    if ctx.solver_mode == "legacy":
-        return _solve_one_step_legacy(ctx, u, qs)
     return _solve_one_step_fused(ctx, u, qs)
 
-
-def _solve_one_step_legacy(
-    ctx: OuterContext,
-    u: cp.ndarray,
-    qs: cp.ndarray,
-) -> cp.ndarray:
-    leg = ctx.legacy
-    if leg is None:
-        raise RuntimeError("Legacy context is not initialized.")
-    rhs_level3_dirichlet[leg.blocks, leg.threads](
-        ctx.nx, ctx.ny, ctx.nz,
-        u, qs, ctx.b,
-        ctx.h_isq, ctx.h_isq, ctx.h_isq,
-        ctx.n2, ctx.n3,
-        ctx.dt05_nd, ctx.u0, ctx.h,
-    )
-    u_new, info = cspla.cg(leg.A, ctx.b, x0=u, tol=ctx.cg_tol, maxiter=ctx.cg_max_iter)
-    if info != 0:
-        raise RuntimeError(f"Legacy CG did not converge (info={info}).")
-    return u_new
 
 
 def _solve_one_step_fused(

@@ -54,7 +54,6 @@ esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
 DT_US=10
-SOLVER_MODE=fused
 # Boundary-correction weight of the predicted workload model. Pinned to the
 # solver default (0.75), the same value used by the accuracy studies.
 CORRECTION_WEIGHT=0.75
@@ -85,7 +84,7 @@ for MODE in ${PLANNER_MODES}; do
     srun -N "${N}" -n "${N}" --ntasks-per-node=1 \
       python src/hermes/scripts/segment_correction/main.py \
         --config "${SIM_CONFIG}" --path-config "${PATH_CFG}" \
-        --dt-us "${DT_US}" --solver-mode "${SOLVER_MODE}" \
+        --dt-us "${DT_US}" \
         --planner-mode "${MODE}" --correction-weight "${CORRECTION_WEIGHT}" \
         --timing-only --no-export-dag \
         --out-dir "${OUT_DIR}"

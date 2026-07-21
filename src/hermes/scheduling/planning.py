@@ -81,7 +81,7 @@ def build_runtime_plan(
     return build_partitioned_runtime_plan(
         planner_mode=str(args.planner_mode),
         correction_weight=float(args.correction_weight),
-        solver_mode=str(args.solver_mode),
+        solver_mode="fused",
         world_size=int(world_size),
         path_config_path=path_config_path,
         out_dir=out_dir,
@@ -129,7 +129,6 @@ def print_run_summary(
     print(f"config: {config_path}")
     print(f"path-config: {path_config_path}")
     print(f"dt: {dt_s:.6e} s ({dt_s * 1e6:.6f} us)")
-    print(f"solver mode: {args.solver_mode}")
     print(f"planner mode: {args.planner_mode}")
     if global_max_cut_depth is not None:
         print(f"global max cut depth: {int(global_max_cut_depth)}")

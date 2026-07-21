@@ -103,12 +103,6 @@ def parse_args(argv=None):
         help="Maximum number of snapshots to save from each runtime-component start window (default: 10).",
     )
     p.add_argument(
-        "--solver-mode",
-        choices=("fused", "legacy"),
-        default="fused",
-        help="Level-3 outer solver mode (default: fused).",
-    )
-    p.add_argument(
         "--planner-mode",
         choices=("uniform", "exact_dp", "dp_monotonicity"),
         default="exact_dp",
@@ -528,7 +522,7 @@ def main(argv=None):
     float_type = select_float_type(rc)
 
     dt_nd = setup.dt_nd
-    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
+    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode="fused")
     n_all = ctx.nx * ctx.ny * ctx.nz
     production_out_dir = out_dir / "diagnostic_normal" if diagnostic_options is not None else out_dir
     production_result = _run_parallel_pass(

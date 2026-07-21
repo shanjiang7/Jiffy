@@ -38,12 +38,6 @@ def parse_args(argv=None):
         help="Number of ranks to emulate during planning (default: 4).",
     )
     p.add_argument(
-        "--solver-mode",
-        choices=("fused", "legacy"),
-        default="fused",
-        help="Solver mode used by numerical lookup.",
-    )
-    p.add_argument(
         "--planner-mode",
         choices=("uniform", "exact_dp", "dp_monotonicity"),
         default="exact_dp",

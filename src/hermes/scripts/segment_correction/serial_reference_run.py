@@ -40,12 +40,6 @@ def parse_args(argv=None):
         help="Save a snapshot every N timesteps across each layer (default: 100).",
     )
     p.add_argument(
-        "--solver-mode",
-        choices=("fused", "legacy"),
-        default="fused",
-        help="Level-3 outer solver mode (default: fused).",
-    )
-    p.add_argument(
         "--boundary-visualization-json",
         help=(
             "Metadata JSON produced by dev/serial_emulated_run.py "
@@ -175,7 +169,7 @@ def main(argv=None):
             boundary_viz = json.load(f)
 
     dt_nd = setup.dt_nd
-    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
+    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode="fused")
     n_all = ctx.nx * ctx.ny * ctx.nz
 
     # Layer count comes from the path config's [layers] section, the same
@@ -220,7 +214,6 @@ def main(argv=None):
     print(f"config:       {config_path}")
     print(f"path-config:  {path_config_path}")
     print(f"dt:           {dt_s:.6e} s  ({dt_s * 1e6:.6f} us)")
-    print(f"solver mode:  {args.solver_mode}")
     print(f"reference:    original path order (independent of DAG/component partitioning)")
     print(
         f"phys.len_scale: {phys.len_scale:.4e} m   "

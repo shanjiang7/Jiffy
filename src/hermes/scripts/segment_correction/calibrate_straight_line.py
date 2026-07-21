@@ -76,12 +76,6 @@ def parse_args(argv=None):
         default=1.0,
         help="Retained z extent (mm) near the top surface for the evaluation region (default: 1.0).",
     )
-    p.add_argument(
-        "--solver-mode",
-        choices=("fused", "legacy"),
-        default="fused",
-        help="Level-3 outer solver mode (default: fused).",
-    )
     p.add_argument("--out-dir", default="outputs/calibration", help="Output directory")
     return p.parse_args(argv)
 
@@ -125,7 +119,7 @@ def main(argv=None):
         raise ValueError("--lseg-mm produced an empty sweep.")
 
     dt_nd = setup.dt_nd
-    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
+    ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode="fused")
     n_all = ctx.nx * ctx.ny * ctx.nz
     h_m = float(rc.level3.h_tuple[0])
     step_m = float(rc.laser.v) * dt_s
@@ -222,7 +216,7 @@ def main(argv=None):
         "dt_us": float(args.dt_us),
         "roi_xy_mm": float(args.roi_xy_mm),
         "roi_z_mm": float(args.roi_z_mm),
-        "solver_mode": str(args.solver_mode),
+        "solver_mode": "fused",
         "rows": rows,
         "builtin_table": {
             "lseg_mm": [float(x) for x in CALIBRATION_LSEG_MM],
