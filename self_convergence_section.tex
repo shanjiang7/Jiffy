@@ -37,7 +37,7 @@ measures: $u^{(k)}$ is itself a more accurate solution, so a run that
 detects a tolerance violation has already computed its remedy.
 
 In practice each batch is realized by extending the correction window of
-every retained dependency by $\Delta$ segments and evaluating the omitted
+every retained dependency by additional segments and evaluating the omitted
 tails on the newly exposed window with the source-off operator
 (\cref{eq:correction_recursion}); no source-on solve is repeated and no DAG
 is rebuilt. All norms below are the relative $L^2$ metric of
@@ -46,7 +46,8 @@ is rebuilt. All norms below are the relative $L^2$ metric of
 We validate the estimator on the Bull path with the $10^{-4}$ configuration
 of \cref{tab:acc_1e4}, partitioned across 32 ranks, where the many partition
 boundaries drive the observed error slightly above the target.
-\cref{tab:self_convergence} reports six iterations with $\Delta = 4$: the
+\cref{tab:self_convergence} reports six iterations, each extending the
+correction windows by four segments: the
 increments decay monotonically, each $\|d_k\|$ reproduces the true error of
 the previous iterate to three or more significant digits, and the converged
 estimate $\|u^{(6)} - u^{(0)}\| = 1.0767\times10^{-4}$ equals the true
@@ -56,7 +57,8 @@ its target; six reduce the error by three orders of magnitude.
 \begin{table}[h]
 \centering
 \caption{Self-convergence iterations on the Bull path ($10^{-4}$
-configuration of \cref{tab:acc_1e4}, 32 ranks, $\Delta=4$). True errors are
+configuration of \cref{tab:acc_1e4}, 32 ranks, four additional segments of
+correction per iteration). True errors are
 measured against a sequential reference used for validation only; $\|d_k\|$
 is computed by the parallel solver alone.}
 \label{tab:self_convergence}
