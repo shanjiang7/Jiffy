@@ -41,31 +41,6 @@ def _component_layer_offsets(path_defs, *, ss_per_layer: int, steps_per_ss: int)
     return layer_idx_by_comp, layer_start_step_by_comp, layer_total_steps
 
 
-def build_component_start_snapshot_steps(
-    path_defs,
-    *,
-    interval_steps: int,
-    max_snapshots_per_component: int,
-) -> dict[int, list[int]]:
-    if interval_steps <= 0:
-        raise ValueError("interval_steps must be >= 1")
-    if max_snapshots_per_component <= 0:
-        raise ValueError("max_snapshots_per_component must be >= 1")
-
-    snapshot_steps_by_component: dict[int, list[int]] = {}
-    for pd in path_defs:
-        total_steps = int(pd.total_steps)
-        rel_steps: list[int] = []
-        for idx in range(int(max_snapshots_per_component)):
-            rel_step = idx * int(interval_steps)
-            if rel_step >= total_steps:
-                break
-            rel_steps.append(rel_step)
-        if not rel_steps:
-            rel_steps = [0]
-        snapshot_steps_by_component[int(pd.component_id)] = rel_steps
-    return snapshot_steps_by_component
-
 
 def build_global_stride_snapshot_steps(
     path_defs,

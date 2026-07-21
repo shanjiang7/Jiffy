@@ -15,7 +15,12 @@ Nothing here is needed to reproduce the paper. Contents:
 - `run_accuracy_hybrid_fix_sbatch.sh` — 8-rank lookup-source ablation runner.
 - `run_selfcheck_{hybrid,bull}_sbatch.sh` — self-convergence ladder studies
   (estimate-vs-truth tables at 31 cuts; see docs/error_analysis.md).
-- `run_mpi_diagnostic_*.sh` — gamma-diagnostic runs.
+- `run_mpi_diagnostic_*.sh` — gamma-diagnostic runs. **Superseded and no longer
+  runnable**: they pass `--diagnostic-check`/`--diagnostic-config`, which were
+  retired from `main.py`. That mode ran a second complete pass at level_K/gamma
+  and compared snapshots; `--self-check` obtains the same information
+  incrementally, without repeating any base solve. Kept for reference only
+  (`configs/dev/diagnostic_check.ini` holds their settings).
 - `run_mpi_sbatch_legacy.sh`, `run_mpi_fast_heat_uniform_8rank_sbatch.sh`,
   `run_mpi_strong_scaling_*.sh` — superseded strong-scaling runners (16-64 rank
   sweeps and env-var-driven variants). The paper's Sec. V-C experiment is

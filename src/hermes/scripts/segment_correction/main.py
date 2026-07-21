@@ -21,11 +21,8 @@ from hermes.scheduling.planning import (
     print_split_records,
 )
 from hermes.scripts.outer_solver import build_outer_context
-from hermes.scripts.segment_correction.compare_runs import compare_snapshot_dirs
 from hermes.scripts.segment_correction.core import run_parallel_tracer
-from hermes.scripts.segment_correction.diagnostic_config import load_diagnostic_check_options
 from hermes.scripts.segment_correction.output import (
-    build_component_start_snapshot_steps,
     build_global_stride_snapshot_steps,
     comp_start_step,
     save_parallel_snapshots,
@@ -84,23 +81,6 @@ def parse_args(argv=None):
         "--timing-only",
         action="store_true",
         help="Run the base/correction pipeline for timing only and skip saving final snapshots.",
-    )
-    p.add_argument(
-        "--component-start-snapshot-mode",
-        action="store_true",
-        help="Save snapshots near each runtime-component start instead of using a uniform global stride.",
-    )
-    p.add_argument(
-        "--component-start-snapshot-interval-steps",
-        type=int,
-        default=100,
-        help="Stride inside each runtime-component snapshot window (default: 100).",
-    )
-    p.add_argument(
-        "--component-start-snapshot-count",
-        type=int,
-        default=10,
-        help="Maximum number of snapshots to save from each runtime-component start window (default: 10).",
     )
     p.add_argument(
         "--planner-mode",
@@ -165,16 +145,6 @@ def parse_args(argv=None):
         "--self-check-save-iters",
         action="store_true",
         help="Save each refinement iteration's snapshots to snapshots_par_iterK (for estimate-vs-truth studies).",
-    )
-    p.add_argument(
-        "--diagnostic-check",
-        action="store_true",
-        help="Run an additional buffered DAG pass and compare snapshots.",
-    )
-    p.add_argument(
-        "--diagnostic-config",
-        default="configs/diagnostic_check.ini",
-        help="INI file with [diagnostic_check] settings.",
     )
     return p.parse_args(argv)
 
@@ -269,19 +239,12 @@ def _run_parallel_pass(
     ) = bcast_data
 
     snap_every_steps = int(args.snap_every_steps)
-    if args.component_start_snapshot_mode:
-        snapshot_steps_by_component = build_component_start_snapshot_steps(
-            all_path_defs,
-            interval_steps=int(args.component_start_snapshot_interval_steps),
-            max_snapshots_per_component=int(args.component_start_snapshot_count),
-        )
-    else:
-        snapshot_steps_by_component = build_global_stride_snapshot_steps(
-            all_path_defs,
-            ss_per_layer=ss_per_layer,
-            steps_per_ss=steps_per_ss,
-            snap_every_steps=snap_every_steps,
-        )
+    snapshot_steps_by_component = build_global_stride_snapshot_steps(
+        all_path_defs,
+        ss_per_layer=ss_per_layer,
+        steps_per_ss=steps_per_ss,
+        snap_every_steps=snap_every_steps,
+    )
 
     assigned_comps = rank_assignments.get(rank, [])
     start_step_map = comp_start_step(all_path_defs, steps_per_ss)
@@ -398,12 +361,6 @@ def _run_parallel_pass(
     if rank == 0:
         if args.timing_only:
             print("[snapshots] skipped (--timing-only)")
-        elif args.component_start_snapshot_mode:
-            print(
-                f"[snapshots] saved to {snaps_dir}  "
-                f"(component-start mode: every {args.component_start_snapshot_interval_steps} steps,"
-                f" up to {args.component_start_snapshot_count} per component, 2 mm ROI)"
-            )
         else:
             print(f"[snapshots] saved to {snaps_dir}  (global every {snap_every_steps} steps, 2 mm ROI)")
         print(f"[timing] {pass_name} total: {par_dt:.3f} s  ({num_layers} layer(s))")
@@ -499,24 +456,6 @@ def main(argv=None):
             raise ValueError("--self-check-iters must be >= 1.")
         args.self_check_gamma_effective = float(args.self_check_gamma)
 
-    diagnostic_options = None
-    if bool(args.diagnostic_check):
-        if bool(args.timing_only):
-            raise ValueError("--diagnostic-check requires snapshots and cannot be used with --timing-only.")
-        if bool(args.component_start_snapshot_mode):
-            raise ValueError("--diagnostic-check requires global stride snapshots; remove --component-start-snapshot-mode.")
-        diag_config_path = resolve_path(project_root, args.diagnostic_config, "configs/diagnostic_check.ini")
-        diagnostic_options = load_diagnostic_check_options(diag_config_path)
-        args.diagnostic_config_path = str(diag_config_path)
-        args.snap_every_steps = int(diagnostic_options.snap_every_steps)
-        if rank == 0:
-            print(f"diagnostic config: {diag_config_path}")
-            print(
-                "diagnostic settings: "
-                f"gamma={diagnostic_options.gamma:.6g}, "
-                f"tol={diagnostic_options.tol:.6g}, "
-                f"snap_every_steps={diagnostic_options.snap_every_steps}"
-            )
 
     print(_rank_device_info(rank), flush=True)
     float_type = select_float_type(rc)
@@ -524,7 +463,7 @@ def main(argv=None):
     dt_nd = setup.dt_nd
     ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode="fused")
     n_all = ctx.nx * ctx.ny * ctx.nz
-    production_out_dir = out_dir / "diagnostic_normal" if diagnostic_options is not None else out_dir
+    production_out_dir = out_dir
     production_result = _run_parallel_pass(
         pass_name="production",
         args=args,
@@ -544,77 +483,6 @@ def main(argv=None):
     if production_result is None:
         sys.exit(0)
 
-    if diagnostic_options is None:
-        return
-
-    production_level_K = float(production_result["dependency_level_K"])
-    buffer_level_K = float(production_level_K) / float(diagnostic_options.gamma)
-    buffer_args = argparse.Namespace(**vars(args))
-    buffer_args.path_complexity_report = False
-    buffer_args.dependency_level_K_override = float(buffer_level_K)
-
-    if rank == 0:
-        print(
-            "=== Diagnostic buffered validation ===\n"
-            f"production level_K={production_level_K:.6g} K, "
-            f"buffer level_K={buffer_level_K:.6g} K"
-        )
-    buffer_out_dir = out_dir / "diagnostic_buffer"
-    buffer_result = _run_parallel_pass(
-        pass_name="diagnostic_buffer",
-        args=buffer_args,
-        comm=comm,
-        rank=rank,
-        world_size=world_size,
-        config_path=config_path,
-        path_config_path=path_config_path,
-        out_dir=buffer_out_dir,
-        rc=rc,
-        phys=phys,
-        float_type=float_type,
-        dt_s=dt_s,
-        ctx=ctx,
-        n_all=n_all,
-    )
-    if buffer_result is None:
-        sys.exit(0)
-
-    if rank == 0:
-        compare_dir = out_dir / "diagnostic_compare"
-        comparison = compare_snapshot_dirs(
-            test_snap_dir=buffer_out_dir / "snapshots_par",
-            reference_snap_dir=production_out_dir / "snapshots_par",
-            out_dir=compare_dir,
-            tol=float(diagnostic_options.tol),
-            test_label="buffer",
-            reference_label="production",
-        )
-        diagnostic_summary = {
-            "production_dir": str(production_out_dir),
-            "buffer_dir": str(buffer_out_dir),
-            "compare_dir": str(compare_dir),
-            "production_level_K": float(production_level_K),
-            "buffer_level_K": float(buffer_level_K),
-            "gamma": float(diagnostic_options.gamma),
-            "tol": float(diagnostic_options.tol),
-            "snap_every_steps": int(diagnostic_options.snap_every_steps),
-            "max_eta": float(comparison["max_rel_l2"]),
-            "mean_eta": float(comparison["mean_rel_l2"]),
-            "num_compared": int(comparison["num_compared"]),
-            "passed": bool(comparison.get("passed", False)),
-            "production_total_seconds": float(production_result["parallel_total_seconds"]),
-            "buffer_total_seconds": float(buffer_result["parallel_total_seconds"]),
-        }
-        out_dir.mkdir(parents=True, exist_ok=True)
-        with open(out_dir / "diagnostic_summary.json", "w", encoding="utf-8") as f:
-            json.dump(diagnostic_summary, f, indent=2)
-        status = "PASS" if diagnostic_summary["passed"] else "FAIL"
-        print(
-            f"[diagnostic] {status}: max_eta={diagnostic_summary['max_eta']:.4e}, "
-            f"tol={diagnostic_summary['tol']:.4e}"
-        )
-        print(f"Saved diagnostic summary to {out_dir / 'diagnostic_summary.json'}")
-    comm.Barrier()
 
 if __name__ == "__main__":
     main()

@@ -133,18 +133,8 @@ def print_run_summary(
     if global_max_cut_depth is not None:
         print(f"global max cut depth: {int(global_max_cut_depth)}")
     print(f"correction weight: {args.correction_weight:.2f}")
-    if hasattr(args, "component_start_snapshot_mode") and bool(getattr(args, "component_start_snapshot_mode", False)):
-        print(
-            "snapshot mode: component-start "
-            f"every {int(getattr(args, 'component_start_snapshot_interval_steps', 100))} steps"
-        )
-    elif getattr(args, "snap_every_steps", None) is None:
-        print(
-            "snapshot mode: corrected components only, "
-            f"every {int(getattr(args, 'component_start_snapshot_interval_steps', 100))} steps"
-        )
-    else:
-        print(f"snapshot mode: every {args.snap_every_steps or 'auto (1 SS)'} steps")
+    if getattr(args, "snap_every_steps", None) is not None:
+        print(f"snapshot mode: every {args.snap_every_steps} steps")
     print(
         f"phys.len_scale: {phys.len_scale:.4e} m   "
         f"dx_step = {dx_step:.4e} (HERMES ND = {rc.laser.v * dt_s * 1e6:.2f} um/step)"
