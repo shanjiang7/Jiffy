@@ -73,6 +73,60 @@ def _build_correction_horizon_ss_map(
     return horizon_map
 
 
+def _build_correction_horizon_by_edge(
+    runtime_components: list[Component],
+    *,
+    edge_pairs: list[tuple[int, int]],
+    ss_per_layer: int,
+) -> dict[tuple[int, int], int]:
+    """Per-edge correction horizon: how far into the destination each source's
+    retained influence actually reaches, in supersegments.
+
+    The per-component map (:func:`_build_correction_horizon_ss_map`) keys the
+    horizon by destination alone, so it equals the reach of the destination's
+    *strongest* predecessor -- the adjacent one, whose deposit is closest and so
+    couples deepest. A distant predecessor's influence dies sooner, yet was
+    being traced to that same full depth. Keying by the (src, dst) edge and the
+    deepest retained supersegment link between them lets each source trace only
+    as far as it genuinely influences the destination. Nothing above the DAG's
+    epsilon threshold is dropped: beyond the deepest retained edge there is, by
+    the retention rule, no edge because the influence is already below epsilon.
+    """
+    ss_to_component: dict[int, Component] = {}
+    for comp in runtime_components:
+        for ss_idx in range(int(comp.start_ss), int(comp.end_ss) + 1):
+            ss_to_component[int(ss_idx)] = comp
+
+    # Deepest destination supersegment reached by any edge of each component
+    # pair. edge_pairs is the retained SS-level DAG, so this is exactly the
+    # reach the threshold kept.
+    edge_reach_ss: dict[tuple[int, int], int] = {}
+    for src_ss, dst_ss in edge_pairs:
+        src_comp = ss_to_component.get(int(src_ss))
+        dst_comp = ss_to_component.get(int(dst_ss))
+        if src_comp is None or dst_comp is None or int(src_comp.id) == int(dst_comp.id):
+            continue
+        key = (int(src_comp.id), int(dst_comp.id))
+        edge_reach_ss[key] = max(int(edge_reach_ss.get(key, -1)), int(dst_ss))
+
+    comp_by_id = {int(c.id): c for c in runtime_components}
+    horizon_by_edge: dict[tuple[int, int], int] = {}
+    for (src_id, dst_id), deepest_dst_ss in edge_reach_ss.items():
+        dst = comp_by_id[int(dst_id)]
+        start_ss = int(dst.start_ss)
+        # Same layer-boundary guard as the per-component map: corrections do not
+        # cross into a component that starts a layer.
+        if start_ss <= 0 or (start_ss % int(ss_per_layer)) == 0:
+            horizon_by_edge[(int(src_id), int(dst_id))] = 0
+            continue
+        reach_ss = int(deepest_dst_ss) - start_ss + 1
+        remaining_layer_ss = int(ss_per_layer) - (start_ss % int(ss_per_layer))
+        horizon_by_edge[(int(src_id), int(dst_id))] = max(
+            0, min(int(reach_ss), int(dst.size), int(remaining_layer_ss))
+        )
+    return horizon_by_edge
+
+
 def _build_component_dependency_maps(
     runtime_components: list[Component],
     edge_pairs: list[tuple[int, int]],
@@ -468,6 +522,11 @@ def build_partitioned_runtime_plan(
             edge_pairs=dag_stage.edge_pairs,
         )
     )
+    correction_horizon_by_edge = _build_correction_horizon_by_edge(
+        runtime_components,
+        edge_pairs=dag_stage.edge_pairs,
+        ss_per_layer=int(dag_stage.dag_result.ss_per_layer),
+    )
 
     self_check = None
     if self_check_gamma is not None:
@@ -526,6 +585,7 @@ def build_partitioned_runtime_plan(
             for rank, load in partition_summary["rank_loads"].items()
         },
         "correction_horizon_ss_map": correction_horizon_ss_map,
+        "correction_horizon_by_edge": correction_horizon_by_edge,
         "component_predecessors": component_predecessors,
         "component_successors": component_successors,
         "component_dependency_edges": component_dependency_edges,

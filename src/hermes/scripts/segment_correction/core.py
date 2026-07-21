@@ -94,6 +94,7 @@ def _build_bridge_run(
     snapshot_stride_steps: int | None,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
     correction_horizon_ss_map: Dict[int, int] | None,
+    edge_horizon_ss: int | None = None,
 ) -> tuple[float, float, list, int, list[int]]:
     src_idx = int(component_index[int(src_component)])
     dst_idx = int(component_index[int(dst_component)])
@@ -123,9 +124,17 @@ def _build_bridge_run(
             raise ValueError("snapshot_stride_steps must be >= 1")
         target_snapshot_steps = list(range(0, int(target_pd.total_steps), int(stride)))
 
-    horizon_ss = 1
-    if correction_horizon_ss_map is not None:
-        horizon_ss = max(1, int(correction_horizon_ss_map.get(int(dst_component), 1)))
+    # Per-edge horizon (edge_horizon_ss) overrides the per-destination map when
+    # supplied: it is how deep THIS source reaches into the destination, not how
+    # deep the destination's nearest predecessor reaches. The production path
+    # passes it so a distant source stops at its own reach; the self-check
+    # ladder leaves it None and keeps the per-component map it drives.
+    if edge_horizon_ss is not None:
+        horizon_ss = max(1, int(edge_horizon_ss))
+    else:
+        horizon_ss = 1
+        if correction_horizon_ss_map is not None:
+            horizon_ss = max(1, int(correction_horizon_ss_map.get(int(dst_component), 1)))
     horizon_ss = min(int(horizon_ss), int(target_pd.weight))
     max_tracer_steps = int(gap_steps) + int(steps_per_ss) * int(horizon_ss)
     bridge_snapshot_steps = [
@@ -160,6 +169,7 @@ def _build_fused_bridge_run(
     snapshot_stride_steps: int | None,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
     correction_horizon_ss_map: Dict[int, int] | None,
+    correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
 ) -> tuple[float, float, list, int, list[int], Dict[int, List[int]]]:
     """One source-off tracer covering every successor of ``src_component``.
 
@@ -169,8 +179,15 @@ def _build_fused_bridge_run(
     that shared prefix once per successor; instead we trace once to the
     farthest successor and record each successor's snapshot steps as we pass
     its window. Per-successor snapshot steps are taken from
-    :func:`_build_bridge_run` unchanged, so the captured fields are identical
-    to what the per-successor runs produced.
+    :func:`_build_bridge_run`, so the captured fields match what per-successor
+    runs would produce for the same horizons.
+
+    When ``correction_horizon_by_edge`` is given, each successor is traced only
+    as deep as this source's retained influence reaches into it, rather than to
+    the destination's full per-component horizon (which is set by its nearest
+    predecessor). The farthest-reaching successor still determines the run
+    length and the longest leg list, so every successor's window remains a
+    prefix of the traced trajectory.
 
     Returns the fused run plus the union of snapshot steps to capture and the
     per-successor step lists needed to demultiplex the result.
@@ -184,6 +201,11 @@ def _build_fused_bridge_run(
     bridge_legs: list = []
     max_tracer_steps = 0
     for dst in dst_components:
+        edge_horizon_ss = None
+        if correction_horizon_by_edge is not None:
+            edge_horizon_ss = correction_horizon_by_edge.get(
+                (int(src_component), int(dst))
+            )
         (
             dst_x_start,
             dst_y_start,
@@ -201,6 +223,7 @@ def _build_fused_bridge_run(
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps_by_component=snapshot_steps_by_component,
             correction_horizon_ss_map=correction_horizon_ss_map,
+            edge_horizon_ss=edge_horizon_ss,
         )
         per_dst_steps[int(dst)] = list(dst_snapshot_steps)
         max_tracer_steps = max(int(max_tracer_steps), int(dst_max_steps))
@@ -370,6 +393,7 @@ def run_parallel_tracer(
     snapshot_stride_steps: int | None = None,
     snapshot_steps_by_component: Dict[int, List[int]] | None = None,
     correction_horizon_ss_map: Dict[int, int] | None = None,
+    correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
     component_predecessors: Dict[int, List[int]] | None = None,
     component_successors: Dict[int, List[int]] | None = None,
     deltaT_K: float = 1.0,
@@ -502,6 +526,7 @@ def run_parallel_tracer(
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps_by_component=snapshot_steps_by_component,
                 correction_horizon_ss_map=correction_horizon_ss_map,
+                correction_horizon_by_edge=correction_horizon_by_edge,
             )
             captured_snaps_host: List[np.ndarray] = []
             tracer_t0 = time.perf_counter()

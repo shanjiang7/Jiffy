@@ -100,6 +100,54 @@ def check(src: int, successors: list[int], n_components: int = 8, steps_each: in
     )
 
 
+def check_per_edge(src: int, successors: list[int], n_components: int = 8,
+                   steps_each: int = 40) -> None:
+    """Per-edge horizons truncate each successor to its own reach while keeping
+    the fused-run invariants: run length covers every window, longest legs are a
+    prefix superset, every per-successor step is captured."""
+    path_def_by_id = make_components(n_components, steps_each)
+    ordered = list(range(n_components))
+    index = {cid: i for i, cid in enumerate(ordered)}
+    common = dict(
+        ordered_component_ids=ordered,
+        component_index=index,
+        path_def_by_id=path_def_by_id,
+        steps_per_ss=STEPS_PER_SS,
+        snapshot_stride_steps=5,
+        snapshot_steps_by_component=None,
+        correction_horizon_ss_map={cid: 3 for cid in ordered},
+    )
+    # A distant source reaches only 1 SS into each destination; the per-component
+    # map would give 3. The per-edge map must win and shrink the trace.
+    by_edge = {(src, dst): 1 for dst in successors}
+
+    (fx, fy, fused_legs, fused_max_steps, union_steps, per_dst_steps) = _build_fused_bridge_run(
+        src_component=src, dst_components=successors,
+        correction_horizon_by_edge=by_edge, **common
+    )
+    # each successor gets its own single-successor edge-horizon build
+    for dst in successors:
+        bx, by, legs, max_steps, snap_steps, _gap = _build_bridge_run(
+            src_component=src, dst_component=dst, edge_horizon_ss=1, **common
+        )
+        assert per_dst_steps[dst] == snap_steps, f"per-edge src={src} dst={dst}: steps differ"
+        assert fused_legs[: len(legs)] == legs, f"per-edge src={src} dst={dst}: legs not a prefix"
+        assert (bx, by) == (fx, fy), f"per-edge src={src} dst={dst}: start differs"
+        assert fused_max_steps >= max_steps, f"per-edge src={src} dst={dst}: run too short"
+    index_by_step = {s: i for i, s in enumerate(union_steps)}
+    for dst, steps in per_dst_steps.items():
+        for step in steps:
+            assert step in index_by_step, f"per-edge src={src} dst={dst}: step {step} missing"
+
+    # And truncation actually happened: compare against the per-component build.
+    (_, _, _, full_max, _, _) = _build_fused_bridge_run(
+        src_component=src, dst_components=successors, **common
+    )
+    print(f"  src={src} successors={successors}: per-edge {fused_max_steps} steps "
+          f"vs per-component {full_max} steps  (truncated {full_max - fused_max_steps})")
+    assert fused_max_steps <= full_max, "per-edge horizon should never trace deeper"
+
+
 def main() -> None:
     print("fused bridge tracer equivalence:")
     check(src=0, successors=[1])            # single successor: must be unchanged
@@ -108,6 +156,10 @@ def main() -> None:
     check(src=1, successors=[2, 3, 4])
     check(src=0, successors=[3])            # non-adjacent single successor
     check(src=0, successors=[2, 1])         # successors given out of path order
+    print("per-edge horizon truncation:")
+    check_per_edge(src=1, successors=[2, 3])
+    check_per_edge(src=0, successors=[1, 2, 3])
+    check_per_edge(src=2, successors=[3, 4])
     print("all checks passed")
 
 

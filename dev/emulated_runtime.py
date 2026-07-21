@@ -65,6 +65,7 @@ def run_emulated_parallel_tracer(
     snapshot_stride_steps: int | None = None,
     snapshot_steps_by_component: Dict[int, List[int]] | None = None,
     correction_horizon_ss_map: Dict[int, int] | None = None,
+    correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
     component_predecessors: Dict[int, List[int]] | None = None,
     component_successors: Dict[int, List[int]] | None = None,
     h_m: float | None = None,
@@ -222,6 +223,7 @@ def run_emulated_parallel_tracer(
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps_by_component=snapshot_steps_by_component,
                 correction_horizon_ss_map=correction_horizon_ss_map,
+                correction_horizon_by_edge=correction_horizon_by_edge,
             )
             captured_snaps_host: List[np.ndarray] = []
             tracer_t0 = time.perf_counter()

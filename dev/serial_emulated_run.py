@@ -283,6 +283,7 @@ def main(argv=None):
     num_layers = int(runtime_plan["num_layers"])
     ss_per_layer = int(runtime_plan["ss_per_layer"])
     correction_horizon_ss_map = runtime_plan["correction_horizon_ss_map"]
+    correction_horizon_by_edge = runtime_plan.get("correction_horizon_by_edge", {})
     component_predecessors = {
         int(comp): [int(pred) for pred in preds]
         for comp, preds in runtime_plan["component_predecessors"].items()
@@ -432,6 +433,7 @@ def main(argv=None):
         snapshot_stride_steps=snapshot_stride_steps,
         snapshot_steps_by_component=snapshot_steps_by_component,
         correction_horizon_ss_map=correction_horizon_ss_map,
+        correction_horizon_by_edge=correction_horizon_by_edge,
         component_predecessors=component_predecessors,
         component_successors=component_successors,
         h_m=h_m,
