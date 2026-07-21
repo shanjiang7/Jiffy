@@ -31,7 +31,12 @@ Two consequences follow. First,
 $\|u^{(k)} - u^{(0)}\|$ converges to the true error of $u^{(0)}$ as the
 iterations exhaust the omitted tails---an error estimate that requires no
 reference solution---while the decay of $\|d_k\|$ signals convergence: the
-iteration stops once $\|d_k\|$ falls below the accuracy target. Second, the
+iteration stops once $\|d_k\|$ falls below the accuracy target. The
+increments decay because successive windows capture tails at increasingly
+large elapsed times, which the contractive source-off evolution
+(\cref{eq:stability_contraction}) monotonically attenuates; the decay is
+monotone in practice provided the window increment $\Delta$ spans the local
+revisit scale of the scan path. Second, the
 procedure repairs what it measures: each $u^{(k)}$ is itself a more accurate
 solution, so a run that detects a tolerance violation has already computed
 its remedy. All norms below are the relative $L^2$ metric of
