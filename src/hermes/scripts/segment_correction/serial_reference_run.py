@@ -40,12 +40,6 @@ def parse_args(argv=None):
         help="Save a snapshot every N timesteps across each layer (default: 100).",
     )
     p.add_argument(
-        "--num-layers",
-        type=int,
-        default=None,
-        help="Override num_layers from path config INI (default: use INI value)",
-    )
-    p.add_argument(
         "--solver-mode",
         choices=("fused", "legacy"),
         default="fused",
@@ -184,7 +178,10 @@ def main(argv=None):
     ctx = build_outer_context(rc, phys, float_type, dt_nd, solver_mode=args.solver_mode)
     n_all = ctx.nx * ctx.ny * ctx.nz
 
-    pipeline_cfg = PipelineConfig.from_ini(path_config_path, num_layers=args.num_layers)
+    # Layer count comes from the path config's [layers] section, the same
+    # source the parallel run reads, so the two cannot describe different
+    # problems.
+    pipeline_cfg = PipelineConfig.from_ini(path_config_path)
     pipeline_cfg = pipeline_cfg.with_solver_motion(dt_s=dt_s, solver_velocity_mps=rc.laser.v)
     ss_result = build_ss_from_cfg(pipeline_cfg)
     if not ss_result.supersegments:
