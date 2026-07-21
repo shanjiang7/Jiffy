@@ -82,11 +82,26 @@ python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 Sweeps Lseg = 0.6–1.4 mm on the h = 30 µm calibration grid (single GPU, ~1 h)
 and prints the (Lseg, ε, rel-L2) table against the built-in reference.
 
-### 4. Strong scaling
+### 4. Strong scaling (Sec. V-C, one rank per GPU)
+
+One job per scan path; each sweeps ranks 1-8 under both partitioning
+strategies on the h = 18 um grid and prints a speedup table.
 
 ```bash
-sbatch scripts/scaling/run_mpi_strong_scaling_64_32_sbatch.sh   # and siblings
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh texas
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh hybrid
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh hilbert
 ```
+
+Aggregate all four paths into one table/figure once the jobs finish:
+
+```bash
+python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
+```
+
+Runs are resumable: a rank point whose `timing_summary.json` already exists is
+skipped, so a timed-out job can simply be resubmitted.
 
 ### 5. Figures (melt-history views)
 

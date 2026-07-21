@@ -16,6 +16,11 @@ Nothing here is needed to reproduce the paper. Contents:
 - `run_selfcheck_{hybrid,bull}_sbatch.sh` — self-convergence ladder studies
   (estimate-vs-truth tables at 31 cuts; see docs/error_analysis.md).
 - `run_mpi_diagnostic_*.sh` — gamma-diagnostic runs.
+- `run_mpi_sbatch_legacy.sh`, `run_mpi_fast_heat_uniform_8rank_sbatch.sh`,
+  `run_mpi_strong_scaling_*.sh` — superseded strong-scaling runners (16-64 rank
+  sweeps and env-var-driven variants). The paper's Sec. V-C experiment is
+  `scripts/scaling/run_strong_scaling_sbatch.sh`. Note the legacy runner
+  hard-coded a PROJECT_DIR pointing at a sibling repository.
 - `quick_start.sh` — legacy environment snippet (superseded by `env_vista.sh`).
 
 Ablation configs live in `configs/dev/` (`*_aabb.ini` pins the published AABB
