@@ -1,94 +1,62 @@
 % ---------------------------------------------------------------------------
 % A posteriori error estimation via self-convergence.
 % Intended location: \input{self_convergence_section} after the Accuracy
-% Study (\cref{seq:accuracy}); notation follows \cref{seq:methodology} and
-% \cref{seq:error_analysis}.
+% Study (\cref{seq:accuracy}).
 % ---------------------------------------------------------------------------
 \subsection{A Posteriori Error Estimation via Self-Convergence}
 \label{seq:self_convergence}
 
-The accuracy studies above compare against a sequential reference solution,
-which is unavailable in production: computing it would negate the parallel
-speedup. Here we show that \method\ can estimate---and iteratively
-reduce---its own truncation error using only quantities the parallel solver
-already computes.
-
-\paragraph{Refinement ladder}
-Let $u^{(0)}$ denote the truncated parallel solution of
-\cref{eq:truncated_form}. By \cref{eq:global_error_sum}, its error is exactly
-the sum of the omitted thermal tails $v_{i\to j}$. We recover these tails
-incrementally: iteration $k$ extends the correction window of every retained
-dependency by a fixed increment of $\Delta$ segments beyond its previous
-horizon, computes the omitted tails on the newly exposed window only (via the
-same source-off operator $\mathcal{S}^{\mathrm{off}}$;
-\cref{eq:correction_recursion}), and superposes them, yielding the refined
-iterate $u^{(k)}$. No source-on solve is repeated, and no dependency-DAG or
-influence-radius construction is required. With
-$d_k := u^{(k)} - u^{(k-1)}$ denoting the $k$-th increment, each omitted tail
-enters exactly one increment, so \cref{eq:global_error_sum} telescopes:
+The accuracy studies above rely on a sequential reference solution, which is
+unavailable in production---computing it would negate the parallel speedup.
+\method\ can instead estimate its own truncation error. Let $u^{(0)}$ denote
+the truncated parallel solution of \cref{eq:truncated_form}. By
+\cref{eq:global_error_sum}, its error is exactly the sum of the omitted
+thermal tails $v_{i\to j}$, and these tails can be recovered incrementally:
+iteration $k$ extends the correction window of every retained dependency by
+$\Delta$ segments, computes the omitted tails on the newly exposed window
+with the source-off operator (\cref{eq:correction_recursion}), and superposes
+them to form the refined iterate $u^{(k)}$. No source-on solve is repeated
+and no DAG is rebuilt. Writing $d_k = u^{(k)} - u^{(k-1)}$, each omitted
+tail enters exactly one iteration, so \cref{eq:global_error_sum} telescopes
+into
 \begin{equation}
-E^{(0)} \;=\; \sum_{k \ge 1} d_k \;+\; R ,
+u^{\mathrm{exact}} - u^{(0)} \;=\; \sum_{k\ge 1} d_k ,
 \label{eq:telescoping}
 \end{equation}
-where $R$ collects the contributions of predecessors never connected in the
-DAG; each such term is below the calibrated threshold by
-\cref{eq:edge_criterion}, and $\|R\|$ is bounded by
-\cref{eq:global_error_bound} (measured at numerical-noise level in all our
-experiments).
+up to contributions of predecessors never connected in the DAG, which are
+below the calibrated threshold by \cref{eq:edge_criterion} and negligible in
+all our experiments.
 
-\paragraph{Monotone convergence and the estimate}
-Every omitted tail is the source-off evolution of a non-negative temperature
-deviation, hence $v_{i\to j} \ge 0$ pointwise and
-$u^{(k)} \uparrow u^{\mathrm{exact}}$ monotonically. Consequently, the
-\emph{cumulative estimate}
-\begin{equation}
-\eta_k \;:=\; \max_{t}\;
-\frac{\bigl\|u^{(k)}(t) - u^{(0)}(t)\bigr\|_{L^2}}
-     {\bigl\|u^{(k)}(t)\bigr\|_{L^2}}
-\label{eq:cumulative_estimate}
-\end{equation}
-(evaluated on the same sampled snapshots and local region as the accuracy
-metric) increases monotonically and converges to the true relative $L^2$
-error of $u^{(0)}$, while the increment norms $\|d_k\|$ supply the stopping
-signal: the ladder terminates once they fall below the accuracy target. Two
-properties follow. First, $\eta_k$ estimates the production error with no
-reference solution---it is a partial sum of the exact series
-\cref{eq:telescoping}, not a heuristic indicator. Second, the mechanism
-repairs what it measures: $u^{(k)}$ itself is a strictly more accurate
+Two consequences follow. First,
+$\|u^{(k)} - u^{(0)}\|$ converges to the true error of $u^{(0)}$ as the
+iterations exhaust the omitted tails---an error estimate that requires no
+reference solution---while the decay of $\|d_k\|$ signals convergence: the
+iteration stops once $\|d_k\|$ falls below the accuracy target. Second, the
+procedure repairs what it measures: each $u^{(k)}$ is itself a more accurate
 solution, so a run that detects a tolerance violation has already computed
-its own remedy.
+its remedy. All norms below are the relative $L^2$ metric of
+\cref{seq:accuracy}, maximized over the sampled snapshots.
 
-\paragraph{Experimental validation}
 We validate the estimator on the Bull path with the $10^{-4}$ configuration
-of \cref{tab:acc_1e4}, partitioned across 32 ranks (31 partition
-boundaries)---an operating point where the many partition cuts drive the
-observed production error slightly above the target, consistent with the
-amplification discussion above. \cref{tab:self_convergence} reports six
-ladder iterations with $\Delta = 4$ segments, comparing each iterate against
-the sequential reference (computed here for validation only). The increments
-decay monotonically, and each increment $\|d_k\|$ (reported in the metric of
-\cref{eq:cumulative_estimate}) reproduces the true error of the
-\emph{previous} iterate to three or more significant digits: the ladder acts
-as a per-iteration error meter. The converged cumulative
-estimate is $\eta_6 = 1.0767\times10^{-4}$, matching the independently
-measured production error $1.0767\times10^{-4}$ to all reported digits. One
-iteration restores the run to its target; six reduce the error by three
-orders of magnitude. The refinement eventually saturates at the
-discretization-level floor ($\sim\!10^{-8}$ on this configuration), orders
-of magnitude below both accuracy targets.
+of \cref{tab:acc_1e4}, partitioned across 32 ranks, where the many partition
+boundaries drive the observed error slightly above the target.
+\cref{tab:self_convergence} reports six iterations with $\Delta = 4$: each
+$\|d_k\|$ reproduces the true error of the previous iterate to three or more
+significant digits, the converged estimate
+$\|u^{(6)} - u^{(0)}\| = 1.0767\times10^{-4}$ equals the true production
+error to all reported digits, one iteration restores the run to its target,
+and six reduce the error by three orders of magnitude.
 
 \begin{table}[h]
 \centering
-\caption{Self-convergence ladder on the Bull path ($10^{-4}$ configuration
-of \cref{tab:acc_1e4}, 32 ranks, $\Delta=4$ segments per iteration). True
-errors are measured against a sequential reference used for validation only;
-the increments $\|d_k\|$ are computed by the parallel solver alone. The
-converged cumulative estimate $\eta_6 = 1.0767\times10^{-4}$ equals the true
-error of $u^{(0)}$ to all reported digits.}
+\caption{Self-convergence iterations on the Bull path ($10^{-4}$
+configuration of \cref{tab:acc_1e4}, 32 ranks, $\Delta=4$). True errors are
+measured against a sequential reference used for validation only; $\|d_k\|$
+is computed by the parallel solver alone.}
 \label{tab:self_convergence}
 \begin{tabular}{ccc}
 \hline
-Iterate & True max relative $L^2$ error & Increment $\|d_k\|$ \\
+Iterate & True max relative $L^2$ error & $\|d_k\|$ \\
 \hline
 $u^{(0)}$ & $1.0767\times10^{-4}$ & --- \\
 $u^{(1)}$ & $3.6498\times10^{-5}$ & $1.0767\times10^{-4}$ \\
