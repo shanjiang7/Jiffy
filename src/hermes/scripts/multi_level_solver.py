@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Inherited HERMES multi-level solver (levels 1-3), kept for provenance.
+
+NOT part of the JIFFY pipeline: no experiment in the paper imports or invokes
+this module. JIFFY uses the Level-3 outer solver in outer_solver.py. Upstream:
+https://github.com/aydinalperen7/hermes-gpu-heat
+
 @author: Hikmet Alperen Aydin
 """
 

@@ -121,6 +121,15 @@ src/hermes/          solver, DAG builder, partitioner, multi-rank runtime, post-
 dev/                 debug tools and supplementary experiments (see dev/README.md)
 ```
 
+The JIFFY pipeline uses the Level-3 outer solver
+(`src/hermes/scripts/outer_solver.py`). The repository also carries the
+inherited HERMES multi-level solver (`src/hermes/scripts/multi_level_solver.py`
+and the modules it alone uses: `kernels/{matvec,rhs,bc}.py`,
+`post/{snapshot,gr_metrics,surface_export*}.py`, `laser_path/trajectory.py`,
+`runtime/{state,movement_varying_vel}.py`, plus `README_Hermes.md`). It is kept
+for provenance — see https://github.com/aydinalperen7/hermes-gpu-heat — and is
+**not** used by any experiment in this paper.
+
 ## Key configuration knobs (`[dependency]` section)
 
 - `level_K` — the ε threshold (K), calibrated in pair with `steps_per_segment`
