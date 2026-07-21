@@ -100,10 +100,25 @@ Aggregate all four paths into one table/figure once the jobs finish:
 python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
 ```
 
-Runs are resumable: a rank point whose `timing_summary.json` already exists is
-skipped, so a timed-out job can simply be resubmitted.
+### 5. Weak scaling (Sec. V-D, one rank per GPU)
 
-### 5. Figures (melt-history views)
+The problem grows with the rank count so the work per rank stays constant: the
+hybrid path repeats its motif P times, and the Bull path's horizontal extent is
+scaled by sqrt(P). Configs are in `configs/weak_scaling/`.
+
+```bash
+sbatch scripts/scaling/run_weak_scaling_sbatch.sh hybrid
+sbatch scripts/scaling/run_weak_scaling_sbatch.sh bull
+
+python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all --weak --plot
+```
+
+Efficiency is T(1)/T(P); ideal is 1.0.
+
+All scaling runs are resumable: a rank point whose `timing_summary.json`
+already exists is skipped, so a timed-out job can simply be resubmitted.
+
+### 6. Figures (melt-history views)
 
 `src/hermes/post/global_view.py` converts a run's snapshots into VTK time
 series (melt history + moving source plane) for ParaView.

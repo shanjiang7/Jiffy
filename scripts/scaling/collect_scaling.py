@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Collect strong-scaling timing runs into a speedup table (and optional plot).
+Collect scaling timing runs into a speedup/efficiency table (and optional plot).
 
 Reads every `<root>/<planner>/parallel_<N>r/timing_summary.json` written by
 the timing-only runs, computes speedup and parallel efficiency against the
@@ -10,6 +10,7 @@ next to the run root.
 Usage:
     python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18/bull
     python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
+    python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all --weak --plot
 """
 from __future__ import annotations
 
@@ -35,22 +36,25 @@ def load_runs(root: Path) -> dict[str, dict[int, float]]:
     return runs
 
 
-def rows_for(label: str, runs: dict[str, dict[int, float]]) -> list[dict]:
+def rows_for(label: str, runs: dict[str, dict[int, float]], weak: bool = False) -> list[dict]:
     rows = []
     for mode in sorted(runs):
         by_rank = runs[mode]
         baseline = by_rank.get(1)
         for n in sorted(by_rank):
             seconds = by_rank[n]
-            speedup = (baseline / seconds) if baseline else float("nan")
+            ratio = (baseline / seconds) if baseline else float("nan")
+            # strong scaling: ratio is speedup, efficiency = speedup / ranks.
+            # weak scaling: the problem grows with the ranks, so ratio IS the
+            # efficiency and a speedup column would be meaningless.
             rows.append(
                 {
                     "path": label,
                     "planner": mode,
                     "ranks": n,
                     "seconds": round(seconds, 3),
-                    "speedup": round(speedup, 3),
-                    "efficiency": round(speedup / n, 3),
+                    "speedup": float("nan") if weak else round(ratio, 3),
+                    "efficiency": round(ratio, 3) if weak else round(ratio / n, 3),
                 }
             )
     return rows
@@ -70,7 +74,7 @@ def print_table(rows: list[dict]) -> None:
         )
 
 
-def maybe_plot(all_rows: list[dict], out_path: Path) -> None:
+def maybe_plot(all_rows: list[dict], out_path: Path, weak: bool = False) -> None:
     try:
         import matplotlib
 
@@ -84,18 +88,23 @@ def maybe_plot(all_rows: list[dict], out_path: Path) -> None:
     fig, axs = plt.subplots(1, len(paths), figsize=(4 * len(paths), 3.6), squeeze=False)
     for ax, path in zip(axs[0], paths):
         for mode in sorted({r["planner"] for r in all_rows if r["path"] == path}):
+            key = "efficiency" if weak else "speedup"
             pts = sorted(
-                (r["ranks"], r["speedup"])
+                (r["ranks"], r[key])
                 for r in all_rows
-                if r["path"] == path and r["planner"] == mode and r["speedup"] == r["speedup"]
+                if r["path"] == path and r["planner"] == mode and r[key] == r[key]
             )
             if pts:
                 ax.plot(*zip(*pts), marker="o", label=mode)
         max_rank = max((r["ranks"] for r in all_rows if r["path"] == path), default=8)
-        ax.plot([1, max_rank], [1, max_rank], "k--", lw=0.8, label="ideal")
+        if weak:
+            ax.plot([1, max_rank], [1, 1], "k--", lw=0.8, label="ideal")
+            ax.set_ylim(0, 1.1)
+        else:
+            ax.plot([1, max_rank], [1, max_rank], "k--", lw=0.8, label="ideal")
         ax.set_title(path)
         ax.set_xlabel("ranks")
-        ax.set_ylabel("speedup")
+        ax.set_ylabel("efficiency" if weak else "speedup")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
     fig.tight_layout()
@@ -109,6 +118,8 @@ def main() -> None:
     p.add_argument("--label", default=None, help="Path label for single-root mode")
     p.add_argument("--all", action="store_true", help="Treat --root as the parent of per-path roots")
     p.add_argument("--plot", action="store_true", help="Also write a speedup plot")
+    p.add_argument("--weak", action="store_true",
+                   help="Weak scaling: report efficiency T(1)/T(P) instead of speedup")
     args = p.parse_args()
 
     root = Path(args.root)
@@ -117,8 +128,10 @@ def main() -> None:
     all_rows: list[dict] = []
     for r in roots:
         label = args.label or r.name
-        all_rows.extend(rows_for(label, load_runs(r)))
+        all_rows.extend(rows_for(label, load_runs(r), weak=args.weak))
 
+    if args.weak:
+        print("  (weak scaling: efficiency = T(1)/T(P); ideal 1.00)")
     print_table(all_rows)
     if all_rows:
         csv_path = root / "scaling_summary.csv"
@@ -128,7 +141,8 @@ def main() -> None:
             writer.writerows(all_rows)
         print(f"  [ok] csv: {csv_path}")
         if args.plot:
-            maybe_plot(all_rows, root / "strong_scaling.png")
+            name = "weak_scaling.png" if args.weak else "strong_scaling.png"
+            maybe_plot(all_rows, root / name, weak=args.weak)
 
 
 if __name__ == "__main__":
