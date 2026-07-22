@@ -19,29 +19,23 @@
 #SBATCH -A ASC21034
 
 
-PROJECT_DIR=/scratch/10226/shawnraul/Parallel_Hermes
+PROJECT_DIR=${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}
+while [ ! -f "${PROJECT_DIR}/env_vista.sh" ] && [ "${PROJECT_DIR}" != "/" ]; do
+  PROJECT_DIR=$(dirname "${PROJECT_DIR}")
+done
+if [ ! -f "${PROJECT_DIR}/env_vista.sh" ]; then
+  echo "ERROR: could not locate the Jiffy repo root (env_vista.sh)" >&2
+  exit 1
+fi
 cd "${PROJECT_DIR}"
 mkdir -p logs outputs .tmp_wrappers
 
-module purge
-module load cuda
-module load gcc/13.2
-module load openmpi
-
-export CUDA_HOME=/home1/apps/nvidia/Linux_aarch64/24.7/math_libs/12.5/targets/sbsa-linux
-export LD_LIBRARY_PATH="${CUDA_HOME}/lib:${LD_LIBRARY_PATH:-}"
-export NUMBA_CUDA_DRIVER=/usr/lib64/libcuda.so
-export CUDA_HOME="${TACC_CUDA_DIR:-${CUDA_HOME}}"
-export LD_LIBRARY_PATH="/usr/lib64/:${LD_LIBRARY_PATH:-}"
+source "${PROJECT_DIR}/env_vista.sh"
 
 # Avoid PMIx trying unavailable psec/munge component.
 export PMIX_MCA_psec=native
 export PRTE_MCA_psec=native
 
-source /work/10226/shawnraul/vista/anaconda3/bin/activate
-conda activate hermes
-
-export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
 
 CONFIG=${CONFIG:-configs/sim_ex3.ini}

@@ -13,6 +13,7 @@ dependencies:
       - matplotlib==3.10.8
       - networkx==3.6.1
       - pillow==12.1.0
+      - scikit-image==0.26.0  # image-based scan paths (Bull, texas)
       # Visualization only (post/ VTK export for the melt-history figures):
       - vtk==9.5.2
       - mayavi==4.8.3
