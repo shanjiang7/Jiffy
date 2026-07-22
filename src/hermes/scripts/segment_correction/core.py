@@ -83,7 +83,7 @@ def _build_component_index(path_defs: List[PathDef]) -> tuple[list[int], dict[in
     }
 
 
-def _build_bridge_run(
+def _build_edge_window(
     *,
     src_component: int,
     dst_component: int,
@@ -93,8 +93,7 @@ def _build_bridge_run(
     steps_per_ss: int,
     snapshot_stride_steps: int | None,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
-    correction_horizon_ss_map: Dict[int, int] | None,
-    edge_horizon_ss: int | None = None,
+    horizon_ss: int,
 ) -> tuple[float, float, list, int, list[int]]:
     src_idx = int(component_index[int(src_component)])
     dst_idx = int(component_index[int(dst_component)])
@@ -124,18 +123,11 @@ def _build_bridge_run(
             raise ValueError("snapshot_stride_steps must be >= 1")
         target_snapshot_steps = list(range(0, int(target_pd.total_steps), int(stride)))
 
-    # Per-edge horizon (edge_horizon_ss) overrides the per-destination map when
-    # supplied: it is how deep THIS source reaches into the destination, not how
-    # deep the destination's nearest predecessor reaches. The production path
-    # passes it so a distant source stops at its own reach; the self-check
-    # ladder leaves it None and keeps the per-component map it drives.
-    if edge_horizon_ss is not None:
-        horizon_ss = max(1, int(edge_horizon_ss))
-    else:
-        horizon_ss = 1
-        if correction_horizon_ss_map is not None:
-            horizon_ss = max(1, int(correction_horizon_ss_map.get(int(dst_component), 1)))
-    horizon_ss = min(int(horizon_ss), int(target_pd.weight))
+    # horizon_ss is how deep THIS source's retained influence reaches into the
+    # destination, in supersegments. The caller decides its value (production:
+    # the planner's per-edge map; self-check ladder: its per-component rung
+    # map); this builder only clamps it to the destination's extent.
+    horizon_ss = min(max(1, int(horizon_ss)), int(target_pd.weight))
     max_tracer_steps = int(gap_steps) + int(steps_per_ss) * int(horizon_ss)
     bridge_snapshot_steps = [
         int(gap_steps) + int(step)
@@ -158,7 +150,7 @@ def _build_bridge_run(
     )
 
 
-def _build_fused_bridge_run(
+def _build_fused_tracer_run(
     *,
     src_component: int,
     dst_components: List[int],
@@ -168,8 +160,7 @@ def _build_fused_bridge_run(
     steps_per_ss: int,
     snapshot_stride_steps: int | None,
     snapshot_steps_by_component: Dict[int, List[int]] | None,
-    correction_horizon_ss_map: Dict[int, int] | None,
-    correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
+    horizon_ss_by_dst: Dict[int, int],
 ) -> tuple[float, float, list, int, list[int], Dict[int, List[int]]]:
     """One source-off tracer covering every successor of ``src_component``.
 
@@ -179,13 +170,12 @@ def _build_fused_bridge_run(
     that shared prefix once per successor; instead we trace once to the
     farthest successor and record each successor's snapshot steps as we pass
     its window. Per-successor snapshot steps are taken from
-    :func:`_build_bridge_run`, so the captured fields match what per-successor
+    :func:`_build_edge_window`, so the captured fields match what per-successor
     runs would produce for the same horizons.
 
-    When ``correction_horizon_by_edge`` is given, each successor is traced only
-    as deep as this source's retained influence reaches into it, rather than to
-    the destination's full per-component horizon (which is set by its nearest
-    predecessor). The farthest-reaching successor still determines the run
+    ``horizon_ss_by_dst`` gives, for each successor, how deep this source is
+    traced into it — its own retained reach, not the destination's full
+    correction window. The farthest-reaching successor determines the run
     length and the longest leg list, so every successor's window remains a
     prefix of the traced trajectory.
 
@@ -201,11 +191,6 @@ def _build_fused_bridge_run(
     bridge_legs: list = []
     max_tracer_steps = 0
     for dst in dst_components:
-        edge_horizon_ss = None
-        if correction_horizon_by_edge is not None:
-            edge_horizon_ss = correction_horizon_by_edge.get(
-                (int(src_component), int(dst))
-            )
         (
             dst_x_start,
             dst_y_start,
@@ -213,7 +198,7 @@ def _build_fused_bridge_run(
             dst_max_steps,
             dst_snapshot_steps,
             _gap_steps,
-        ) = _build_bridge_run(
+        ) = _build_edge_window(
             src_component=int(src_component),
             dst_component=int(dst),
             ordered_component_ids=ordered_component_ids,
@@ -222,8 +207,7 @@ def _build_fused_bridge_run(
             steps_per_ss=steps_per_ss,
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps_by_component=snapshot_steps_by_component,
-            correction_horizon_ss_map=correction_horizon_ss_map,
-            edge_horizon_ss=edge_horizon_ss,
+            horizon_ss=int(horizon_ss_by_dst[int(dst)]),
         )
         per_dst_steps[int(dst)] = list(dst_snapshot_steps)
         max_tracer_steps = max(int(max_tracer_steps), int(dst_max_steps))
@@ -243,6 +227,37 @@ def _build_fused_bridge_run(
         union_steps,
         per_dst_steps,
     )
+
+
+def _edge_horizons_for_source(
+    src_component: int,
+    dst_components: List[int],
+    correction_horizon_by_edge: Dict[tuple[int, int], int] | None,
+) -> Dict[int, int]:
+    """Per-destination trace depths for one source, from the planner's map.
+
+    The planner records, for every retained (src, dst) component edge, how deep
+    the source's retained influence reaches into the destination. That map is
+    the single source of truth for production trace depths; a missing entry
+    means the plan and the DAG disagree, which is an error, not a fallback.
+    """
+    if correction_horizon_by_edge is None:
+        raise ValueError(
+            "correction_horizon_by_edge is required: production corrections "
+            "trace each edge to its own retained reach "
+            "(runtime_plan['correction_horizon_by_edge'])."
+        )
+    horizons: Dict[int, int] = {}
+    for dst in dst_components:
+        key = (int(src_component), int(dst))
+        if key not in correction_horizon_by_edge:
+            raise KeyError(
+                f"No correction horizon for component edge {key}: the DAG "
+                f"retains this edge but the plan's correction_horizon_by_edge "
+                f"has no entry for it."
+            )
+        horizons[int(dst)] = int(correction_horizon_by_edge[key])
+    return horizons
 
 
 def _snapshot_steps_for_component(
@@ -406,11 +421,18 @@ def run_parallel_tracer(
     Pipelined component execution with source-side tracer correction.
 
     Each rank runs the base simulation of its local components in path order.
-    Immediately after finishing a component, it computes outgoing source-off
-    corrections for every successor listed in the component-level DAG. Remote
-    correction payloads are sent to the successor owner rank. The successor rank
-    later superposes all incoming correction snapshots onto its own base
-    snapshots.
+    Immediately after finishing a component, it runs ONE source-off tracer that
+    serves every successor listed in the component-level DAG: the tracer runs
+    to the farthest successor's retained reach, and each successor's correction
+    snapshots are demultiplexed out of that single run (a nearer successor's
+    window is a prefix of a farther one's trajectory). Trace depths come from
+    `correction_horizon_by_edge`, the planner's per-(src, dst) reach map — the
+    single source of truth for how deep each correction is simulated; it is
+    required. Remote correction payloads are sent to the successor owner rank,
+    which later superposes all incoming corrections onto its base snapshots.
+
+    `correction_horizon_ss_map` (per-destination horizons) is used only by the
+    optional self-check ladder as the baseline it extends from.
 
     Returns `(final_states_host, timing_stats)`, where `final_states_host` maps
     component id -> list of numpy snapshot arrays when
@@ -508,7 +530,9 @@ def run_parallel_tracer(
         if succ_list:
             # One tracer serves every successor: their bridges share a start
             # state and a leg prefix, so a separate run per successor would
-            # re-simulate that prefix. See _build_fused_bridge_run.
+            # re-simulate that prefix. Each successor is traced only as deep
+            # as this source's retained influence reaches into it.
+            # See _build_fused_tracer_run.
             (
                 bridge_x_start,
                 bridge_y_start,
@@ -516,7 +540,7 @@ def run_parallel_tracer(
                 max_tracer_steps,
                 union_snapshot_steps,
                 per_succ_snapshot_steps,
-            ) = _build_fused_bridge_run(
+            ) = _build_fused_tracer_run(
                 src_component=int(j),
                 dst_components=[int(s) for s in succ_list],
                 ordered_component_ids=ordered_component_ids,
@@ -525,8 +549,9 @@ def run_parallel_tracer(
                 steps_per_ss=steps_per_ss,
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps_by_component=snapshot_steps_by_component,
-                correction_horizon_ss_map=correction_horizon_ss_map,
-                correction_horizon_by_edge=correction_horizon_by_edge,
+                horizon_ss_by_dst=_edge_horizons_for_source(
+                    int(j), succ_list, correction_horizon_by_edge
+                ),
             )
             captured_snaps_host: List[np.ndarray] = []
             tracer_t0 = time.perf_counter()
@@ -662,7 +687,10 @@ def _effective_horizon_ss(
     dst_component: int,
     dst_weight: int,
 ) -> int:
-    """Horizon actually used by _build_bridge_run for this destination."""
+    """Resolve a per-destination horizon map entry to an explicit trace depth.
+
+    Self-check-ladder semantics: the ladder keys horizons by destination (all
+    of a destination's connected pairs extend together)."""
     horizon_ss = 1
     if horizon_ss_map is not None:
         horizon_ss = max(1, int(horizon_ss_map.get(int(dst_component), 1)))
@@ -763,7 +791,10 @@ def _run_self_check_ladder(
     comm_sc = comm.Dup()
 
     def _bridge(src_j: int, dst_j: int, horizon_map):
-        return _build_bridge_run(
+        # The ladder drives per-DESTINATION horizons (every connected pair of a
+        # destination is extended in lockstep), unlike production's per-edge
+        # depths; the map is resolved here and passed as an explicit depth.
+        return _build_edge_window(
             src_component=int(src_j),
             dst_component=int(dst_j),
             ordered_component_ids=ordered_component_ids,
@@ -772,7 +803,9 @@ def _run_self_check_ladder(
             steps_per_ss=steps_per_ss,
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps_by_component=snapshot_steps_by_component,
-            correction_horizon_ss_map=horizon_map,
+            horizon_ss=_effective_horizon_ss(
+                horizon_map, int(dst_j), int(path_def_by_id[int(dst_j)].weight)
+            ),
         )
 
     def _trace(src_j: int, x0, y0, legs, max_steps, snap_steps) -> List[np.ndarray]:

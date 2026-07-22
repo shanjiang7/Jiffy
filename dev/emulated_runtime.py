@@ -10,7 +10,8 @@ from hermes.motion.types import PathDef
 from hermes.scripts.outer_solver import OuterContext, run_ss_outer
 from hermes.scripts.segment_correction.core import (
     _build_component_index,
-    _build_fused_bridge_run,
+    _build_fused_tracer_run,
+    _edge_horizons_for_source,
     _normalise_dependency_maps,
     _snapshot_steps_for_component,
     _superpose_correction_lists,
@@ -64,7 +65,6 @@ def run_emulated_parallel_tracer(
     ss_per_layer: int,
     snapshot_stride_steps: int | None = None,
     snapshot_steps_by_component: Dict[int, List[int]] | None = None,
-    correction_horizon_ss_map: Dict[int, int] | None = None,
     correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
     component_predecessors: Dict[int, List[int]] | None = None,
     component_successors: Dict[int, List[int]] | None = None,
@@ -205,7 +205,7 @@ def run_emulated_parallel_tracer(
                 _release_cupy_temporaries()
                 continue
 
-            # One tracer serves every successor; see _build_fused_bridge_run.
+            # One tracer serves every successor; see _build_fused_tracer_run.
             (
                 bridge_x_start,
                 bridge_y_start,
@@ -213,7 +213,7 @@ def run_emulated_parallel_tracer(
                 max_tracer_steps,
                 union_snapshot_steps,
                 per_succ_snapshot_steps,
-            ) = _build_fused_bridge_run(
+            ) = _build_fused_tracer_run(
                 src_component=int(j),
                 dst_components=[int(s) for s in succ_list],
                 ordered_component_ids=ordered_component_ids,
@@ -222,8 +222,9 @@ def run_emulated_parallel_tracer(
                 steps_per_ss=steps_per_ss,
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps_by_component=snapshot_steps_by_component,
-                correction_horizon_ss_map=correction_horizon_ss_map,
-                correction_horizon_by_edge=correction_horizon_by_edge,
+                horizon_ss_by_dst=_edge_horizons_for_source(
+                    int(j), succ_list, correction_horizon_by_edge
+                ),
             )
             captured_snaps_host: List[np.ndarray] = []
             tracer_t0 = time.perf_counter()

@@ -282,8 +282,7 @@ def main(argv=None):
     steps_per_ss = int(runtime_plan["steps_per_ss"])
     num_layers = int(runtime_plan["num_layers"])
     ss_per_layer = int(runtime_plan["ss_per_layer"])
-    correction_horizon_ss_map = runtime_plan["correction_horizon_ss_map"]
-    correction_horizon_by_edge = runtime_plan.get("correction_horizon_by_edge", {})
+    correction_horizon_by_edge = runtime_plan["correction_horizon_by_edge"]
     component_predecessors = {
         int(comp): [int(pred) for pred in preds]
         for comp, preds in runtime_plan["component_predecessors"].items()
@@ -366,7 +365,12 @@ def main(argv=None):
             target_rank=int(args.boundary_target_rank),
         )
         target_pd = path_def_by_id[int(target_comp_id)]
-        horizon_ss = max(1, int(correction_horizon_ss_map.get(int(target_comp_id), 1)))
+        # The export window is the correction production actually sends over
+        # this specific edge, so it uses the per-edge reach.
+        horizon_ss = max(
+            1,
+            int(correction_horizon_by_edge.get((int(src_comp_id), int(target_comp_id)), 1)),
+        )
         horizon_steps = min(int(target_pd.total_steps), int(horizon_ss) * int(steps_per_ss))
         rel_steps = list(range(0, max(1, int(horizon_steps)), int(snapshot_stride_steps)))
         if not rel_steps:
@@ -432,7 +436,6 @@ def main(argv=None):
         ss_per_layer=ss_per_layer,
         snapshot_stride_steps=snapshot_stride_steps,
         snapshot_steps_by_component=snapshot_steps_by_component,
-        correction_horizon_ss_map=correction_horizon_ss_map,
         correction_horizon_by_edge=correction_horizon_by_edge,
         component_predecessors=component_predecessors,
         component_successors=component_successors,
@@ -460,7 +463,6 @@ def main(argv=None):
             ss_per_layer=ss_per_layer,
             snapshot_stride_steps=snapshot_stride_steps,
             snapshot_steps_by_component=snapshot_steps_by_component,
-            correction_horizon_ss_map=correction_horizon_ss_map,
             component_predecessors=component_predecessors,
             component_successors=component_successors,
             h_m=h_m,

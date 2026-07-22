@@ -54,6 +54,10 @@ def build_planning_summary(
             int(k): int(v)
             for k, v in runtime_plan.get("correction_horizon_ss_map", {}).items()
         },
+        "correction_horizon_by_edge": {
+            f"{int(src)}->{int(dst)}": int(v)
+            for (src, dst), v in runtime_plan.get("correction_horizon_by_edge", {}).items()
+        },
         "partition": runtime_plan["partition_summary"],
     }
     if search_summary is not None:

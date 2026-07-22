@@ -147,7 +147,6 @@ def main(argv=None):
     steps_per_ss = int(runtime_plan["steps_per_ss"])
     num_layers = int(runtime_plan["num_layers"])
     ss_per_layer = int(runtime_plan["ss_per_layer"])
-    correction_horizon_ss_map = runtime_plan["correction_horizon_ss_map"]
     runtime_components = runtime_plan["runtime_components"]
 
     # Group components + path_defs by layer.

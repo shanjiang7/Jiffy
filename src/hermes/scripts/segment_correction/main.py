@@ -207,7 +207,7 @@ def _run_parallel_pass(
             runtime_plan["ss_per_layer"],
             runtime_plan["rank_pred_loads"],
             runtime_plan["correction_horizon_ss_map"],
-            runtime_plan.get("correction_horizon_by_edge", {}),
+            runtime_plan["correction_horizon_by_edge"],
             runtime_plan["component_predecessors"],
             runtime_plan["component_successors"],
             int(runtime_plan.get("global_max_cut_depth", 0)),
