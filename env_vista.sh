@@ -11,7 +11,9 @@ export NUMBA_CUDA_DRIVER=/usr/lib64/libcuda.so
 export CUDA_HOME="${TACC_CUDA_DIR:-${CUDA_HOME}}"
 export LD_LIBRARY_PATH="/usr/lib64/:${LD_LIBRARY_PATH:-}"
 
-source /work/10226/shawnraul/vista/anaconda3/bin/activate
+# Activate the hermes conda environment. CONDA_ROOT defaults to the TACC
+# Vista location used for the paper; point it at your own conda install.
+source "${CONDA_ROOT:-/work/10226/shawnraul/vista/anaconda3}/bin/activate"
 conda activate hermes
 
 export PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)/src:${PYTHONPATH:-}"

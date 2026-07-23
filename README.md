@@ -1,5 +1,7 @@
 # JIFFY — Printing in a JIFFY: a parallel-in-time heat transfer solver for additive manufacturing
 
+## 1. Description
+
 Artifact for the SC26 paper. JIFFY parallelizes laser powder-bed heat transfer
 simulation **in time**: the laser path is split into segments, each rank solves
 its segments' source-on fields independently, and inter-segment thermal
@@ -8,165 +10,126 @@ segment-level dependency DAG. A calibrated threshold ε (Table I) bounds the
 error of every neglected dependency, giving a tunable accuracy target
 (rel-L2 1e-4 or 1e-7) at parallel speed.
 
-## Artifact workflow
+Repository layout:
 
 ```
-calibrate (optional, Table I)
-   └─ src/hermes/scripts/segment_correction/calibrate_straight_line.py
-serial reference                 ──►  ground truth temperature snapshots
-   └─ src/hermes/scripts/segment_correction/serial_reference_run.py
-parallel run                     ──►  DAG build + partition + multi-rank correction
-   └─ src/hermes/scripts/segment_correction/main.py
-compare                          ──►  rel-L2 (parallel vs serial)
-   └─ src/hermes/scripts/segment_correction/compare_runs.py
+INSTALL.md           step-by-step installation instructions
+examples/            small runnable cases (start here)
+configs/examples/    canonical paths + simulation grids
+configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
+configs/images/      raster path images (longhorn = Bull, texas, ...)
+configs/dev/         ablation + experimental configs
+scripts/accuracy/    accuracy jobs (serial reference → 8-rank parallel → compare)
+scripts/scaling/     strong-/weak-scaling and MPS jobs
+src/hermes/          solver, DAG builder, partitioner, multi-rank runtime, post-processing
+paper/               paper PDF (artifact appendix PDF to follow)
+dev/                 debug tools and supplementary experiments (see dev/README.md)
 ```
 
-Inspection tools: `plan_only.py` (DAG/partition preview without solving, incl.
-`--path-complexity-report` A_path reporting) and `post/global_view*.py` (VTK
-melt-history export for the paper's figures).
+## 2. Installing the artifact
 
-## Requirements
+Requirements in brief: Linux, an NVIDIA GPU with a CUDA 12.x driver, MPI
+(CUDA-aware MPI **not** required), Python 3.11. All package versions are
+pinned in `environment.yml`.
 
-- NVIDIA GPU with CUDA 12.x (validated on GH200 120 GB, TACC Vista).
-  Full 8-rank reproductions use 8 GPUs via Slurm; several MPI ranks may share
-  one GPU (`bind_local_gpu` maps co-located ranks to the same device).
-- MPI (validated with OpenMPI), Python 3.11.
+See **[INSTALL.md](INSTALL.md)** for the full steps: system modules, Python
+environment creation (conda or pip), environment activation
+(`source env_vista.sh`), and an installation check.
+
+## 3. Running the artifact
+
+Every run takes two input files:
+
+- a **simulation config** (`configs/examples/sim_*.ini`) — grid spacing,
+  moving-domain dimensions, physical coefficients, solver settings;
+- a **path config** — the laser scan trajectory plus the dependency/accuracy
+  settings (segment length, threshold ε).
+
+Start with the worked example in [`examples/straight_line/`](examples/straight_line/):
+a straight track solved serially for ground truth, then in parallel on
+2 ranks, then compared. Inside an interactive 2-node GPU allocation
+(on TACC Vista: `idev -p gh-dev -N 2 -n 2 -t 00:30:00`):
 
 ```bash
-module load cuda gcc openmpi          # site-specific; see env_vista.sh for TACC Vista
-conda env create -f environment.yml
-source env_vista.sh                   # activates env, sets PYTHONPATH/CUDA vars
+bash examples/straight_line/run_example.sh
 ```
 
-On systems other than TACC Vista, adapt the `module load` / CUDA_HOME lines in
-`env_vista.sh`; the PYTHONPATH line is location-independent.
+The three steps it runs, and their outputs:
 
-## Reproducing the paper
+1. **Serial reference** (`serial_reference_run.py`, single GPU) →
+   ground-truth temperature snapshots.
+2. **Parallel run** (`main.py` under MPI) → builds the dependency DAG and
+   partition (`planning_summary.json`), runs the per-rank source-on solves
+   and inter-rank corrections, writes parallel snapshots and timing data.
+3. **Comparison** (`compare_runs.py`) → prints the max/mean relative L2
+   error between the two; the maximum should be at or below the 1e-4
+   target (`comparison_summary.json`).
 
-All jobs are submitted from the repository root. Serial references are built
-once and reused by later runs. Each accuracy job prints a final summary of
-`max/mean rel-L2` per tolerance.
+The same three-step pattern, at 8 ranks and on the other scan paths, is what
+the batch jobs in `scripts/` automate.
 
-### 1. Straight-line accuracy (Tables IV/V anchor rows) — start here
+## 4. Reproducing the paper's tables and figures
+
+All jobs are submitted from the repository root; serial references are built
+once and reused. Runs are resumable — a completed point is skipped on
+resubmission, so a timed-out job can simply be resubmitted.
+
+**Accuracy, Tables IV/V** (each job prints a final max/mean rel-L2 summary):
 
 ```bash
-sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
+sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh   # ~5 min on 8 GPUs
+sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh     # ~1.5 h first run, ~15 min after
+sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh       # same shape
 ```
 
-~5 min total on 8 GPUs (also the fastest end-to-end installation check).
-Expected (digit-exact vs the printed values):
+Expected for the straight line (digit-exact vs the printed values):
+max rel-L2 = 9.5957e-05 (1e-4 target, paper: 9.60e-05) and 9.8060e-08
+(1e-7 target, paper: 9.81e-08). Bull and Spiral-Raster land well below
+their targets: the DP partitioner places cuts where coupling is weakest,
+while the straight line realizes the worst case.
 
-| target | max rel-L2 | paper |
-|---|---|---|
-| 1e-4 | 9.5957e-05 | 9.60e-05 |
-| 1e-7 | 9.8060e-08 | 9.81e-08 |
-
-### 2. Hybrid spiral-raster and Bull accuracy (Tables IV/V)
-
-```bash
-sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh   # ~1.5 h first run (serial ref), ~15 min after
-sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh     # same shape
-```
-
-Expected: max rel-L2 well below the target at 8 ranks (typical observed:
-hybrid ~1e-8 at both targets; Bull ~3e-6 / ~1e-8). The exact value depends on
-the DP planner's cut placement; the target is a guaranteed upper bound, and
-the straight line shows the bound is sharp when the worst case is realized.
-
-### 3. Table I calibration (optional)
+**Table I calibration** (optional; presets already shipped):
 
 ```bash
 python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 ```
 
-Sweeps Lseg = 0.6–1.4 mm on the h = 30 µm calibration grid (single GPU, ~1 h)
-and prints the (Lseg, ε, rel-L2) table against the built-in reference.
-
-### 4. Strong scaling (Sec. V-C, one rank per GPU)
-
-One job per scan path; each sweeps ranks 1-8 under both partitioning
-strategies on the h = 18 um grid and prints a speedup table.
+**Strong scaling, Sec. V-C** (one rank per GPU; one job per scan path):
 
 ```bash
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh texas
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh hybrid
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh hilbert
-```
-
-Aggregate all four paths into one table/figure once the jobs finish:
-
-```bash
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, hybrid, hilbert
 python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
 ```
 
-### 5. Weak scaling (Sec. V-D, one rank per GPU)
-
-The problem grows with the rank count so the work per rank stays constant: the
-hybrid path repeats its motif P times, and the Bull path's horizontal extent is
-scaled by sqrt(P). Configs are in `configs/weak_scaling/`.
+**Weak scaling, Sec. V-D** (problem grows with the rank count):
 
 ```bash
-sbatch scripts/scaling/run_weak_scaling_sbatch.sh hybrid
-sbatch scripts/scaling/run_weak_scaling_sbatch.sh bull
-
+sbatch scripts/scaling/run_weak_scaling_sbatch.sh hybrid     # also: bull
 python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all --weak --plot
 ```
 
-Efficiency is T(1)/T(P); ideal is 1.0.
+`collect_scaling.py` aggregates the per-run timing summaries into the
+speedup/efficiency tables and plots corresponding to the paper's scaling
+figures.
 
-All scaling runs are resumable: a rank point whose `timing_summary.json`
-already exists is skipped, so a timed-out job can simply be resubmitted.
-
-### 6. Figures (melt-history views)
-
-`src/hermes/post/global_view.py` converts a run's snapshots into VTK time
-series (melt history + moving source plane) for ParaView.
-
-## Repository layout
-
-```
-configs/examples/    canonical paths + simulation grids (sim_calibration.ini = h=30 µm grid)
-configs/accuracy/    calibrated per-tolerance configs (tol1e4: Lseg 0.9 mm/ε 5 K; tol1e7: 1.3 mm/0.01 K)
-configs/images/      raster path images (longhorn = Bull, texas, ...)
-configs/dev/         ablation configs (_aabb published baseline, _lookup10) + experimental
-scripts/accuracy/    official accuracy jobs (serial ref → 8-rank parallel → compare)
-scripts/scaling/     strong-scaling / MPS jobs
-src/hermes/          solver, DAG builder, partitioner, multi-rank runtime, post-processing
-dev/                 debug tools and supplementary experiments (see dev/README.md)
-```
-
-The JIFFY pipeline uses the Level-3 outer solver
-(`src/hermes/scripts/outer_solver.py`). The repository also carries the
-inherited HERMES multi-level solver (`src/hermes/scripts/multi_level_solver.py`
-and the modules it alone uses: `kernels/{matvec,rhs,bc}.py`,
-`post/{snapshot,gr_metrics,surface_export*}.py`, `laser_path/trajectory.py`,
-`runtime/{state,movement_varying_vel}.py`, plus `README_Hermes.md`). It is kept
-for provenance — see https://github.com/aydinalperen7/hermes-gpu-heat — and is
-**not** used by any experiment in this paper.
+**Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
+snapshots into VTK time series for ParaView.
 
 ## Key configuration knobs (`[dependency]` section)
 
-- `level_K` — the ε threshold (K), calibrated in pair with `steps_per_segment`
-  (Table I). Presets: `configs/accuracy/*_tol1e4.ini`, `*_tol1e7.ini`.
+- `level_K` — the ε threshold (K), calibrated in pair with
+  `steps_per_segment` (Table I). Presets: `configs/accuracy/*_tol1e4.ini`,
+  `*_tol1e7.ini`.
 - `pair_test = chords` — segment pairs tested via exact chord-to-chord
   distances with per-chord deposit times (`aabb` reproduces the published
   bounding-box test; see `configs/dev/*_aabb.ini`).
 - `lookup_source_on_steps = chord` — the influence-radius lookup deposits one
-  chord of track (validated default). `segment` is the most conservative
-  option; an integer gives an explicit step count (1 = the published
-  single-pulse source, which under-resolves dense paths).
+  chord of track (validated default).
 - `--path-complexity-report` (plan_only.py) — reports A_path, the max
-  in-degree of the dependency DAG: the path-complexity metric that predicts
-  error amplification at high rank counts (up to A_path sub-ε neglects
-  superpose at dense cuts; see `dev/run_accuracy_cuts_*.sh` for the study).
+  in-degree of the dependency DAG: predicts error amplification at high rank
+  counts.
 - `--self-check` (main.py) — a-posteriori self-convergence error estimate and
-  iterative repair: extends the retained corrections incrementally
-  (`--self-check-horizon-step` supersegments per iteration,
-  `--self-check-iters` iterations), reports the per-iteration rel-L2 shift and
-  the cumulative estimate of the production error — no serial reference
-  required. Validated at 31 cuts: estimated vs true production error agree to
-  four digits on both test paths (see docs/error_analysis.md).
+  iterative repair; no serial reference required (see docs/error_analysis.md).
 
 ## Notes for reviewers
 
@@ -178,3 +141,7 @@ for provenance — see https://github.com/aydinalperen7/hermes-gpu-heat — and 
   lookup tables; the first run of each configuration builds them on GPU
   (seconds to ~10 min depending on ε), later runs are cache-hot.
 - `outputs/`, `logs/`, and `.hermes_cache/` are generated and git-ignored.
+- The repository also carries the inherited HERMES multi-level solver
+  (`src/hermes/scripts/multi_level_solver.py` and modules only it uses),
+  kept for provenance — see https://github.com/aydinalperen7/hermes-gpu-heat.
+  It is not used by any experiment in this paper.

@@ -1,0 +1,95 @@
+# Installing JIFFY
+
+## Prerequisites
+
+- Linux with an NVIDIA GPU and a CUDA 12.x driver (all stages, including
+  planning, initialize the GPU runtime).
+- An MPI implementation for the multi-GPU experiments (validated with
+  OpenMPI 5.0.5). Standard host-buffer MPI is sufficient; CUDA-aware MPI is
+  **not** required.
+- Python 3.11.
+- On an HPC system: a module environment and Slurm (the provided job scripts
+  use `sbatch`).
+
+## 1. Load system modules
+
+Module names are site-specific. On TACC Vista (the machine used for the
+paper):
+
+```bash
+module purge
+module load gcc/13.2.0
+module load openmpi/5.0.5
+module load cuda/12.5
+```
+
+On other systems, load any GCC toolchain, an MPI, and a CUDA 12.x toolkit.
+
+## 2. Get the code
+
+```bash
+git clone https://github.com/shanjiang7/Jiffy.git
+cd Jiffy
+```
+
+## 3. Create the Python environment
+
+With Conda (recommended — all versions pinned):
+
+```bash
+conda env create -f environment.yml
+conda activate hermes
+```
+
+Or with pip in a virtual environment:
+
+```bash
+python3 -m venv jiffy_env
+source jiffy_env/bin/activate
+pip install numpy==2.3.5 scipy==1.17.0
+pip install cupy-cuda12x==13.6.0 numba==0.63.1
+pip install mpi4py==4.1.1 networkx==3.6.1
+pip install matplotlib pillow scikit-image
+```
+
+`mpi4py` builds against the system MPI, so load the MPI module (step 1)
+before installing. If exact versions are unavailable on your system, the
+closest versions compatible with CUDA 12.5 and Python 3.11 may be used.
+
+## 4. Activate the environment
+
+All runs are launched from the repository root with the environment script
+sourced:
+
+```bash
+source env_vista.sh
+```
+
+The script loads the modules from step 1, sets the CUDA environment
+(`CUDA_HOME`, `NUMBA_CUDA_DRIVER`), activates the `hermes` conda
+environment, and puts `src/` on `PYTHONPATH`. On systems other than TACC
+Vista, adapt the `module load` and CUDA lines, and point `CONDA_ROOT` at
+your conda installation (or replace the activation lines with your own
+environment's). The `PYTHONPATH` line is location-independent.
+
+## 5. Verify the installation
+
+On a GPU node (e.g. an interactive session):
+
+```bash
+python3 -c "import cupy; cupy.zeros(1); print('GPU OK:', cupy.cuda.runtime.getDeviceCount(), 'device(s)')"
+```
+
+Then run a planning-only pass of the full pipeline (single GPU, a few
+seconds of compute):
+
+```bash
+python3 -u src/hermes/scripts/segment_correction/plan_only.py \
+  --config configs/examples/sim_ex1.ini \
+  --path-config configs/examples/fast_heat.ini \
+  --world-size 8 --planner-mode exact_dp
+```
+
+A successful run prints the segment and component counts, the dependency-DAG
+statistics, and the component-to-rank assignment with predicted per-rank
+loads, and writes `planning_summary.json` under `outputs/segment_plan/`.
