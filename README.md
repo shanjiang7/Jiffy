@@ -18,12 +18,9 @@ examples/            small runnable cases (start here)
 configs/examples/    canonical paths + simulation grids
 configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
 configs/images/      raster path images (longhorn = Bull, texas, ...)
-configs/dev/         ablation + experimental configs
 scripts/accuracy/    accuracy jobs (serial reference → 8-rank parallel → compare)
 scripts/scaling/     strong-/weak-scaling and MPS jobs
 src/hermes/          solver, DAG builder, partitioner, multi-rank runtime, post-processing
-paper/               paper PDF (artifact appendix PDF to follow)
-dev/                 debug tools and supplementary experiments (see dev/README.md)
 ```
 
 ## 2. Installing the artifact
