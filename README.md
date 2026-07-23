@@ -106,11 +106,5 @@ sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh
 sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh
 ```
 
-Expected for the straight line (digit-exact vs the printed values):
-max rel-L2 = 9.5957e-05 (1e-4 target, paper: 9.60e-05) and 9.8060e-08
-(1e-7 target, paper: 9.81e-08). Bull and Spiral-Raster land well below
-their targets: the DP partitioner places cuts where coupling is weakest,
-while the straight line realizes the worst case.
-
 **Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
 snapshots into VTK time series for ParaView.
