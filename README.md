@@ -71,7 +71,7 @@ All jobs are submitted from the repository root; serial references are built
 once and reused. Runs are resumable — a completed point is skipped on
 resubmission, so a timed-out job can simply be resubmitted.
 
-**Table I calibration** (optional; presets already shipped):
+**Table I straight-line calibration**:
 
 ```bash
 python src/hermes/scripts/segment_correction/calibrate_straight_line.py
