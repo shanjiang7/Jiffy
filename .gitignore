@@ -27,5 +27,8 @@ env/
 
 tmp/
 
-# Paper PDF (not part of the artifact)
-SC26_amheat.pdf
+
+# Overleaf working clone and local LaTeX scratch (not part of the artifact)
+docs/69a5f80166f4dbce931b3361/
+/artifact_description_archive.tex
+/sc_ad_ae_template.tex
