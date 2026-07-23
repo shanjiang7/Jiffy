@@ -74,20 +74,6 @@ All jobs are submitted from the repository root; serial references are built
 once and reused. Runs are resumable — a completed point is skipped on
 resubmission, so a timed-out job can simply be resubmitted.
 
-**Accuracy, Tables IV/V** (each job prints a final max/mean rel-L2 summary):
-
-```bash
-sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh   # ~5 min on 8 GPUs
-sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh     # ~1.5 h first run, ~15 min after
-sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh       # same shape
-```
-
-Expected for the straight line (digit-exact vs the printed values):
-max rel-L2 = 9.5957e-05 (1e-4 target, paper: 9.60e-05) and 9.8060e-08
-(1e-7 target, paper: 9.81e-08). Bull and Spiral-Raster land well below
-their targets: the DP partitioner places cuts where coupling is weakest,
-while the straight line realizes the worst case.
-
 **Table I calibration** (optional; presets already shipped):
 
 ```bash
@@ -112,36 +98,19 @@ python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all 
 speedup/efficiency tables and plots corresponding to the paper's scaling
 figures.
 
+**Accuracy, Tables IV/V** (each job prints a final max/mean rel-L2 summary):
+
+```bash
+sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
+sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh
+sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh
+```
+
+Expected for the straight line (digit-exact vs the printed values):
+max rel-L2 = 9.5957e-05 (1e-4 target, paper: 9.60e-05) and 9.8060e-08
+(1e-7 target, paper: 9.81e-08). Bull and Spiral-Raster land well below
+their targets: the DP partitioner places cuts where coupling is weakest,
+while the straight line realizes the worst case.
+
 **Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
 snapshots into VTK time series for ParaView.
-
-## Key configuration knobs (`[dependency]` section)
-
-- `level_K` — the ε threshold (K), calibrated in pair with
-  `steps_per_segment` (Table I). Presets: `configs/accuracy/*_tol1e4.ini`,
-  `*_tol1e7.ini`.
-- `pair_test = chords` — segment pairs tested via exact chord-to-chord
-  distances with per-chord deposit times (`aabb` reproduces the published
-  bounding-box test; see `configs/dev/*_aabb.ini`).
-- `lookup_source_on_steps = chord` — the influence-radius lookup deposits one
-  chord of track (validated default).
-- `--path-complexity-report` (plan_only.py) — reports A_path, the max
-  in-degree of the dependency DAG: predicts error amplification at high rank
-  counts.
-- `--self-check` (main.py) — a-posteriori self-convergence error estimate and
-  iterative repair; no serial reference required (see docs/error_analysis.md).
-
-## Notes for reviewers
-
-- Accuracy targets are guaranteed upper bounds; observed errors are usually
-  far below because the exact-DP partitioner places cuts where coupling is
-  weakest. The straight-line rows realize the worst case and match the bound
-  within 4%.
-- The `.hermes_cache/` directory memoizes the numerical influence-radius
-  lookup tables; the first run of each configuration builds them on GPU
-  (seconds to ~10 min depending on ε), later runs are cache-hot.
-- `outputs/`, `logs/`, and `.hermes_cache/` are generated and git-ignored.
-- The repository also carries the inherited HERMES multi-level solver
-  (`src/hermes/scripts/multi_level_solver.py` and modules only it uses),
-  kept for provenance — see https://github.com/aydinalperen7/hermes-gpu-heat.
-  It is not used by any experiment in this paper.
