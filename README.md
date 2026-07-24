@@ -2,13 +2,19 @@
 
 ## 1. Description
 
-Artifact for the SC26 paper. JIFFY parallelizes laser powder-bed heat transfer
-simulation **in time**: the laser path is split into segments, each rank solves
+Jiffy a GPU-based solver for transient heat equation for laser bed powder fusion problem that
+appear in metal additive manufacturing. The related paper appeared in the ACM/IEEE SC'26 conference. 
+
+JIFFY parallelizes laser powder-bed heat transfer simulations  **both in space and time**.
+In space, it relies on the HERMES single-GPU solver. In time it uses multi-GPUs: 
+the laser path is split into segments, each rank solves
 its segments' source-on fields independently, and inter-segment thermal
 influence is restored by superposing source-off *corrections* along a
 segment-level dependency DAG. A calibrated threshold ε (Table I) bounds the
 error of every neglected dependency, giving a tunable accuracy target
-(rel-L2 1e-4 or 1e-7) at parallel speed.
+(rel-L2 1e-4 or 1e-7) at parallel speed. 
+
+The instructions below is for running on the `Vista` system on the Texas Advanced Computing Center (TACC)
 
 Repository layout:
 
@@ -17,10 +23,10 @@ INSTALL.md           step-by-step installation instructions
 examples/            small runnable cases (start here)
 configs/examples/    canonical paths + simulation grids
 configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
-configs/images/      raster path images (longhorn = Bull, texas, ...)
+configs/images/      raster path images for the test cases in the SC'26 paper (Bull, Texas, and others)
 scripts/accuracy/    accuracy jobs (serial reference → 8-rank parallel → compare)
 scripts/scaling/     strong-/weak-scaling and MPS jobs
-src/hermes/          solver, DAG builder, partitioner, multi-rank runtime, post-processing
+src/hermes/          single-GPU moving laser solver, DAG builder, partitioner, multi-rank runtime, post-processing
 ```
 
 ## 2. Installing the artifact
