@@ -278,6 +278,7 @@ def _build_partition_stage(
             num_processors=int(world_size),
             correction_weight=float(correction_weight),
             cut_depths=dag_stage.cut_depths,
+            ss_per_layer=int(dag_stage.dag_result.ss_per_layer),
         )
     elif mode in _DP_PARTITIONERS:
         partition_summary = _DP_PARTITIONERS[mode](
@@ -288,6 +289,7 @@ def _build_partition_stage(
             correction_weight=float(correction_weight),
             cut_depths=dag_stage.cut_depths,
             verify_monotonicity=bool(verify_dp_monotonicity),
+            ss_per_layer=int(dag_stage.dag_result.ss_per_layer),
         )
     else:
         raise ValueError(

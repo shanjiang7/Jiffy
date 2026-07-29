@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from hermes.scheduling._grouping import CORRECTION_FIXED_COST_SS
 from hermes.scheduling._partitioned import build_partitioned_runtime_plan
 from hermes.runtime.setup import compute_dt_s as _compute_dt_s
 
@@ -29,6 +30,7 @@ def build_planning_summary(
         "planner_mode": str(runtime_plan["planner_mode"]),
         "global_max_cut_depth": int(runtime_plan.get("global_max_cut_depth", 0)),
         "correction_weight": float(runtime_plan["correction_weight"]),
+        "correction_fixed_cost_ss": float(CORRECTION_FIXED_COST_SS),
         "auto_select_ss_length": False,
         "segments_per_supersegment": int(runtime_plan["segments_per_supersegment"]),
         "num_source_components": int(len(runtime_plan["source_components"])),
