@@ -22,7 +22,6 @@ from hermes.scheduling.planning import build_runtime_plan
 from hermes.scripts.outer_solver import build_outer_context
 from emulated_runtime import run_emulated_parallel_tracer
 from hermes.scripts.segment_correction.output import (
-    build_component_start_snapshot_steps,
     build_global_stride_snapshot_steps,
     comp_start_step,
     save_parallel_snapshots,
@@ -231,7 +230,7 @@ def main(argv=None):
     bind_local_gpu()
 
     args = parse_args(argv)
-    project_root = Path(__file__).resolve().parents[4]
+    project_root = Path(__file__).resolve().parents[1]
 
     config_path = resolve_path(project_root, args.config, "configs/examples/sim_ex1.ini")
     path_config_path = resolve_path(project_root, args.path_config, "")
@@ -400,14 +399,10 @@ def main(argv=None):
             f"component {src_comp_id}->{target_comp_id}, every {snapshot_stride_steps} steps"
         )
     elif args.component_start_snapshot_mode:
-        snapshot_steps_by_component = build_component_start_snapshot_steps(
-            all_path_defs,
-            interval_steps=int(args.component_start_snapshot_interval_steps),
-            max_snapshots_per_component=int(args.component_start_snapshot_count),
-        )
-        print(
-            f"snapshot mode: component-start every {args.component_start_snapshot_interval_steps} steps, "
-            f"up to {args.component_start_snapshot_count} per component"
+        raise RuntimeError(
+            "component-start snapshot mode was retired with "
+            "build_component_start_snapshot_steps (commit ef720d2); use the "
+            "default global-stride snapshots."
         )
     else:
         snapshot_steps_by_component = build_global_stride_snapshot_steps(
