@@ -1,3 +1,4 @@
+import os
 import time
 import cupy as cp
 import numpy as np
@@ -8,6 +9,17 @@ from hermes.utils.snapshot_utils import crop_snapshot
 
 
 _CORRECTION_CHUNK_MAX_BYTES = 64 * 1024 * 1024
+
+# HERMES_TRACER_PROFILE=1 breaks each tracer's cost into setup / movement-cache
+# build / snapshot-D2H components (reported per rank in timing_summary.json).
+# Adds synchronization points inside the tracer, so leave off for timing runs.
+_TRACER_PROFILE = os.environ.get("HERMES_TRACER_PROFILE", "") == "1"
+_TRACER_PROFILE_TEMPLATE = {
+    "setup_seconds": 0.0,
+    "cache_seconds": 0.0,
+    "cache_builds": 0.0,
+    "snap_d2h_seconds": 0.0,
+}
 
 
 def _build_predecessor_map(
@@ -554,6 +566,22 @@ def run_parallel_tracer(
                 ),
             )
             captured_snaps_host: List[np.ndarray] = []
+            tracer_profile = _TRACER_PROFILE_TEMPLATE.copy() if _TRACER_PROFILE else None
+
+            def _tracer_snapshot_cb(snap_u, out=captured_snaps_host, prof=tracer_profile):
+                if prof is None:
+                    _append_host_delta_snapshot(
+                        out, snap_u, ambient_gpu=ambient_gpu,
+                        nx=int(ctx.nx), ny=int(ctx.ny), nz=int(ctx.nz), h_m=h_m,
+                    )
+                    return
+                s0 = time.perf_counter()
+                _append_host_delta_snapshot(
+                    out, snap_u, ambient_gpu=ambient_gpu,
+                    nx=int(ctx.nx), ny=int(ctx.ny), nz=int(ctx.nz), h_m=h_m,
+                )
+                prof["snap_d2h_seconds"] += time.perf_counter() - s0
+
             tracer_t0 = time.perf_counter()
             _, _ = run_ss_outer(
                 ctx,
@@ -566,18 +594,51 @@ def run_parallel_tracer(
                 max_steps=max_tracer_steps,
                 snapshot_stride_steps=snapshot_stride_steps,
                 snapshot_steps=union_snapshot_steps,
-                snapshot_callback=lambda snap_u, out=captured_snaps_host: _append_host_delta_snapshot(
-                    out,
-                    snap_u,
-                    ambient_gpu=ambient_gpu,
-                    nx=int(ctx.nx),
-                    ny=int(ctx.ny),
-                    nz=int(ctx.nz),
-                    h_m=h_m,
-                ),
+                snapshot_callback=_tracer_snapshot_cb,
+                profile=tracer_profile,
             )
             cp.cuda.Stream.null.synchronize()
             timing_stats["tracer_solve_seconds"] += time.perf_counter() - tracer_t0
+            if tracer_profile is not None:
+                timing_stats["tracer_profile_setup_seconds"] = (
+                    timing_stats.get("tracer_profile_setup_seconds", 0.0)
+                    + tracer_profile["setup_seconds"]
+                )
+                timing_stats["tracer_profile_cache_seconds"] = (
+                    timing_stats.get("tracer_profile_cache_seconds", 0.0)
+                    + tracer_profile["cache_seconds"]
+                )
+                timing_stats["tracer_profile_cache_builds"] = (
+                    timing_stats.get("tracer_profile_cache_builds", 0.0)
+                    + tracer_profile["cache_builds"]
+                )
+                timing_stats["tracer_profile_snap_d2h_seconds"] = (
+                    timing_stats.get("tracer_profile_snap_d2h_seconds", 0.0)
+                    + tracer_profile["snap_d2h_seconds"]
+                )
+                timing_stats["tracer_profile_runs"] = (
+                    timing_stats.get("tracer_profile_runs", 0.0) + 1.0
+                )
+                timing_stats["tracer_profile_snapshots"] = (
+                    timing_stats.get("tracer_profile_snapshots", 0.0)
+                    + float(len(captured_snaps_host))
+                )
+                iters = tracer_profile.get("cg_iters", [])
+                if iters:
+                    per_ss = [
+                        sum(iters[s:s + steps_per_ss]) / max(1, len(iters[s:s + steps_per_ss]))
+                        for s in range(0, len(iters), steps_per_ss)
+                    ]
+                    head = "  ".join(f"{v:.1f}" for v in per_ss[:16])
+                    tail = (
+                        f"  ...  last5: " + "  ".join(f"{v:.1f}" for v in per_ss[-5:])
+                        if len(per_ss) > 21 else ""
+                    )
+                    print(
+                        f"[tracer-profile] rank {rank} comp {int(j)}: "
+                        f"{len(per_ss)} SS, mean CG iters/step by SS: {head}{tail}",
+                        flush=True,
+                    )
             if len(captured_snaps_host) != len(union_snapshot_steps):
                 raise RuntimeError(
                     f"Fused bridge tracer for component {int(j)} captured "

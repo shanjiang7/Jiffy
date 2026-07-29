@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable
@@ -247,10 +248,16 @@ def run_ss_outer(
     snapshot_stride_steps: int | None = None,
     snapshot_steps: list[int] | None = None,
     snapshot_callback: Callable[[cp.ndarray], None] | None = None,
+    profile: dict | None = None,
 ) -> tuple[list[cp.ndarray], cp.ndarray]:
     """
     Simulate one or more supersegments' worth of dt steps.
+
+    When ``profile`` is a dict, per-call setup and movement-cache build time
+    are accumulated into it (keys ``setup_seconds``/``cache_seconds``);
+    behavior is otherwise unchanged.
     """
+    _prof_t0 = time.perf_counter() if profile is not None else 0.0
     u = u_init.copy()
     x = float(x_start)
     y = float(y_start)
@@ -263,6 +270,11 @@ def run_ss_outer(
 
     cache = None
     fast_caches: OrderedDict[tuple[float, float], dict[str, object]] = OrderedDict()
+    if profile is not None:
+        cp.cuda.Stream.null.synchronize()
+        profile["setup_seconds"] = profile.get("setup_seconds", 0.0) + (
+            time.perf_counter() - _prof_t0
+        )
     snapshots: list[cp.ndarray] = []
     num_snapshots = 0
     global_step = 0
@@ -304,11 +316,18 @@ def run_ss_outer(
                 if len(fast_caches) >= _MOVEMENT_CACHE_MAX_ENTRIES:
                     _, evicted_cache = fast_caches.popitem(last=False)
                     del evicted_cache
+                _prof_c0 = time.perf_counter() if profile is not None else 0.0
                 fast_caches[key] = prepare_movement_cache(
                     nx=ctx.nx, ny=ctx.ny, nz=ctx.nz,
                     u=u, x_arr=x_arr, y_arr=y_arr, z_arr=z_arr,
                     vx=vx, vy=vy,
                 )
+                if profile is not None:
+                    cp.cuda.Stream.null.synchronize()
+                    profile["cache_seconds"] = profile.get("cache_seconds", 0.0) + (
+                        time.perf_counter() - _prof_c0
+                    )
+                    profile["cache_builds"] = profile.get("cache_builds", 0.0) + 1.0
             else:
                 fast_caches.move_to_end(key)
             cache = fast_caches[key]
@@ -340,7 +359,11 @@ def run_ss_outer(
             else:
                 qs[:] = 0.0
 
-            u = _solve_one_step(ctx, u, qs)
+            if profile is None:
+                u = _solve_one_step(ctx, u, qs)
+            else:
+                u, _step_stats = _solve_one_step_fused(ctx, u, qs, return_stats=True)
+                profile.setdefault("cg_iters", []).append(int(_step_stats["cg_iters"]))
             x += dx
             y += dy
 

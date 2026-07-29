@@ -397,6 +397,10 @@ def _run_parallel_pass(
                 "num_correction_edges": float(timing_stats.get("num_correction_edges", 0.0)),
                 "max_component_predecessors": float(timing_stats.get("max_component_predecessors", 0.0)),
             }
+            # HERMES_TRACER_PROFILE=1 adds tracer_profile_* keys; pass through.
+            for k, v in timing_stats.items():
+                if str(k).startswith("tracer_profile_"):
+                    merged_stats[str(k)] = float(v)
             rank_timing_summary[str(rank_idx)] = merged_stats
             print(
                 f"  rank {rank_idx:2d}: total={merged_stats['rank_total_seconds']:.3f}s "
