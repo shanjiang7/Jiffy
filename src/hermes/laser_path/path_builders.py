@@ -464,6 +464,135 @@ def build_hybrid_spiral_raster_sections_nd(
     return sections
 
 
+def build_double_square_spiral_nd(
+    *,
+    origin_m: tuple[float, float],
+    side_m: float,
+    track_pitch_m: float,
+    len_scale: float,
+) -> np.ndarray:
+    """Interleaved double square spiral: in on thread A, out on thread B.
+
+    Thread A is the standard inward square spiral from the lower-left corner
+    (rings at even multiples of the track pitch), built with twice the track
+    pitch so its own rings are 2p apart. Thread B is the same spiral started
+    one track pitch further in (rings at odd multiples), traversed outward.
+    Both threads co-rotate counterclockwise, so ring k of one thread nests
+    strictly between rings k and k+1 of the other and the tracks never
+    cross; the composite fill has uniform track_pitch_m spacing. The two
+    inner endpoints are adjacent near the tile center, so the A->B link is
+    a short straight leg. The path enters at origin (the corner) and exits
+    at origin + (p, p), whose only track-free escape is the spiral mouth
+    corridor running up the left side at x = origin_x + p.
+    """
+    if side_m <= 0.0:
+        raise ValueError("side_m must be > 0")
+    p_m = float(track_pitch_m)
+    if p_m <= 0.0 or 4.0 * p_m >= float(side_m):
+        raise ValueError("track_pitch_m must be in (0, side_m / 4)")
+
+    x0_m, y0_m = float(origin_m[0]), float(origin_m[1])
+    thread_a = build_square_spiral_nd(
+        origin_m=(x0_m, y0_m),
+        side_m=float(side_m),
+        line_pitch_m=2.0 * p_m,
+        len_scale=len_scale,
+        direction="inward",
+    )
+    thread_b = build_square_spiral_nd(
+        origin_m=(x0_m + p_m, y0_m + p_m),
+        side_m=float(side_m) - 2.0 * p_m,
+        line_pitch_m=2.0 * p_m,
+        len_scale=len_scale,
+        direction="outward",
+    )
+    return np.vstack([thread_a, thread_b])
+
+
+def build_continuous_hybrid_sections_nd(
+    *,
+    origin_m: tuple[float, float],
+    spiral_side_m: float,
+    track_pitch_m: float,
+    raster_width_m: float,
+    raster_line_pitch_m: float,
+    gap_m: float = 0.0,
+    tile_gap_m: float = 0.0,
+    repeats: int = 1,
+    len_scale: float,
+) -> list[PathSectionND]:
+    """Continuous spiral+raster path: one uninterrupted laser-on stroke.
+
+    Each unit is a double square spiral (enter at the lower-left corner,
+    exit one pitch inside it) bridged to a vertical serpentine raster. The
+    exit bridge runs north through the spiral's track-free mouth corridor,
+    then east one pitch above the tile's top track into the raster's first
+    line — every bridge leg is parallel to (or a collinear extension of)
+    the fill at >= one track pitch, so nothing is retraced and no tracks
+    cross. The raster's exit and the next unit's corner entry both lie on
+    the baseline, so consecutive units chain with a short baseline leg.
+    All sections carry source_on=True: there is no travel move anywhere.
+    """
+    if spiral_side_m <= 0.0:
+        raise ValueError("spiral_side_m must be > 0")
+    if raster_width_m <= 0.0:
+        raise ValueError("raster_width_m must be > 0")
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
+
+    x0_m, y0_m = float(origin_m[0]), float(origin_m[1])
+    s_m = float(spiral_side_m)
+    p_m = float(track_pitch_m)
+    unit_span_m = s_m + float(gap_m) + float(raster_width_m) + float(tile_gap_m)
+
+    sections: list[PathSectionND] = []
+    prev_end_nd: np.ndarray | None = None
+    for unit_idx in range(int(repeats)):
+        ux_m = x0_m + unit_idx * unit_span_m
+        spiral_nd = build_double_square_spiral_nd(
+            origin_m=(ux_m, y0_m),
+            side_m=s_m,
+            track_pitch_m=p_m,
+            len_scale=len_scale,
+        )
+
+        raster_x0_m = ux_m + s_m + float(gap_m)
+        raster_nd = build_raster_nd(
+            origin_m=(raster_x0_m, y0_m),
+            width_m=s_m,
+            height_m=float(raster_width_m),
+            line_pitch_m=float(raster_line_pitch_m),
+            passes=None,
+            x_dir_sign=-1,  # enter the first line from the top
+            x_major=False,
+            len_scale=len_scale,
+        )
+
+        if prev_end_nd is not None:
+            sections.append((np.vstack([prev_end_nd, spiral_nd[0]]), True))
+        sections.append((spiral_nd, True))
+
+        # Exit bridge: north through the mouth corridor (x = ux + p, track-free
+        # by construction), east at one pitch above the top track, then down
+        # into the raster's first line as a collinear extension.
+        bridge_m = np.array(
+            [
+                [ux_m + p_m, y0_m + p_m],
+                [ux_m + p_m, y0_m + s_m + p_m],
+                [raster_x0_m, y0_m + s_m + p_m],
+                [raster_x0_m, y0_m + s_m],
+            ]
+        )
+        bridge_nd = bridge_m / float(len_scale)
+        if not np.allclose(bridge_nd[0], spiral_nd[-1]):
+            raise AssertionError("double-spiral exit does not meet the bridge")
+        sections.append((bridge_nd, True))
+        sections.append((raster_nd, True))
+        prev_end_nd = raster_nd[-1]
+
+    return sections
+
+
 # --------- 5) Build from picture  --------
 def _require_picture_deps():
     try:
