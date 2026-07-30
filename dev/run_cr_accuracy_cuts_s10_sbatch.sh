@@ -36,7 +36,9 @@ PATHKEY=${1:-bull}
 case "${PATHKEY}" in
   bull)              CFG_PREFIX=configs/accuracy/bull ;;
   continuous_hybrid) CFG_PREFIX=configs/accuracy/continuous_hybrid ;;
-  *) echo "ERROR: unknown path '${PATHKEY}' (bull|continuous_hybrid)" >&2; exit 1 ;;
+  texas)             CFG_PREFIX=configs/accuracy/texas ;;
+  hilbert)           CFG_PREFIX=configs/accuracy/hilbert ;;
+  *) echo "ERROR: unknown path '${PATHKEY}' (bull|continuous_hybrid|texas|hilbert)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_calibration.ini
