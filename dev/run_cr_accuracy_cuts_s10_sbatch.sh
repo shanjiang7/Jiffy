@@ -35,9 +35,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 PATHKEY=${1:-bull}
 case "${PATHKEY}" in
   bull)              CFG_PREFIX=configs/accuracy/bull ;;
-  hybrid)            CFG_PREFIX=configs/accuracy/hybrid_spiral_raster ;;
   continuous_hybrid) CFG_PREFIX=configs/accuracy/continuous_hybrid ;;
-  *) echo "ERROR: unknown path '${PATHKEY}' (bull|hybrid|continuous_hybrid)" >&2; exit 1 ;;
+  *) echo "ERROR: unknown path '${PATHKEY}' (bull|continuous_hybrid)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_calibration.ini

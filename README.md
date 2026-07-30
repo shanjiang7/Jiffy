@@ -86,14 +86,14 @@ python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 **Strong scaling, Sec. V-C** (one rank per GPU; one job per scan path):
 
 ```bash
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, hybrid, hilbert
+sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, continuous_hybrid, hilbert
 python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
 ```
 
 **Weak scaling, Sec. V-D** (problem grows with the rank count):
 
 ```bash
-sbatch scripts/scaling/run_weak_scaling_sbatch.sh hybrid     # also: bull
+sbatch scripts/scaling/run_weak_scaling_sbatch.sh continuous_hybrid     # also: bull
 python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all --weak --plot
 ```
 
@@ -105,7 +105,7 @@ figures.
 
 ```bash
 sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
-sbatch scripts/accuracy/run_accuracy_hybrid_sbatch.sh
+sbatch scripts/accuracy/run_accuracy_continuous_hybrid_sbatch.sh
 sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh
 ```
 

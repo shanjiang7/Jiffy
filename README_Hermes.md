@@ -97,7 +97,7 @@ There are mainly 9 path modes. Examples for each can be found in `configs/paths_
 6) **island raster** – raster-filled island grid with source-off travel between islands, including `raster_dir_mode = fixed|checkerboard`.
 7) **Hilbert** – continuous Hilbert space-filling scan over a square region.
 8) **picture** – trace a shape from a binary image (e.g. a logo or silhouette).
-9) **hybrid spiral+raster** – square spiral (`spiral_dir = outward|inward`), source-off connector, then y-major raster.
+9) **continuous hybrid spiral+raster** – interleaved double square spiral (in on thread A, out on thread B, uniform track pitch) feeding a y-major raster: one uninterrupted laser-on stroke, no travel moves.
 
 Example preview showing the original six preview modes (with the starting location marked as 0):
 <p align="center"> <img src="preview_path/preview_paths_all_modes.png" alt="Preview of all six laser path modes" width="800"/> </p>
@@ -116,7 +116,7 @@ Path configs now support lightweight inheritance:
 base = path_base.ini
 ```
 
-The common DAG/run defaults live in [path_base.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/path_base.ini), while files such as [fast_heat.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/fast_heat.ini), [island_raster.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/island_raster.ini), [hilbert.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/hilbert.ini), and [hybrid_spiral_raster.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/hybrid_spiral_raster.ini) now only carry path geometry plus local overrides.
+The common DAG/run defaults live in [path_base.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/path_base.ini), while files such as [fast_heat.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/fast_heat.ini), [island_raster.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/island_raster.ini), [hilbert.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/hilbert.ini), and [continuous_hybrid.ini](configs/examples/continuous_hybrid.ini) now only carry path geometry plus local overrides.
 
 ## Segment-Correction Planning
 

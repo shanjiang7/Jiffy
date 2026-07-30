@@ -36,7 +36,6 @@ run_ref () {
   local CFG
   case "${PATHKEY}" in
     bull)              CFG=configs/accuracy/bull_${TOL}.ini ;;
-    hybrid)            CFG=configs/accuracy/hybrid_spiral_raster_${TOL}.ini ;;
     continuous_hybrid) CFG=configs/accuracy/continuous_hybrid_${TOL}.ini ;;
   esac
   if [ -d "${ROOT}/serial_s10/snapshots_ser" ]; then
@@ -54,15 +53,13 @@ run_ref () {
 
 run_ref bull   tol1e4 &
 run_ref bull   tol1e7 &
-run_ref hybrid tol1e4 &
-run_ref hybrid tol1e7 &
 run_ref continuous_hybrid tol1e4 &
 run_ref continuous_hybrid tol1e7 &
 wait
 
 echo ""
 echo "[$(date)] all stride-10 serial references:"
-for PATHKEY in bull hybrid continuous_hybrid; do
+for PATHKEY in bull continuous_hybrid; do
   for TOL in tol1e4 tol1e7; do
     D=outputs/accuracy_${PATHKEY}_${TOL}_h30/serial_s10/snapshots_ser
     if [ -d "${D}" ]; then

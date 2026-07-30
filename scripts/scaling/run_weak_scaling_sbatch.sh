@@ -2,7 +2,7 @@
 # Weak-scaling study, one rank per GPU (paper Sec. V-D).
 #
 # The problem grows with the rank count so the work per rank stays constant:
-#   hybrid - P repeated spiral-raster motifs for a P-rank run
+#   continuous_hybrid - P repeated spiral-raster units for a P-rank run
 #   bull   - horizontal extent scaled by sqrt(P), so scanned area grows with P
 # (verified: total solver steps per rank vary by <=1% across P = 1..8).
 #
@@ -13,7 +13,7 @@
 # exists is skipped, so a timed-out job can simply be resubmitted.
 #
 # Usage:
-#   sbatch scripts/scaling/run_weak_scaling_sbatch.sh hybrid
+#   sbatch scripts/scaling/run_weak_scaling_sbatch.sh continuous_hybrid
 #   sbatch scripts/scaling/run_weak_scaling_sbatch.sh bull
 
 #SBATCH -J weak_scale
@@ -41,10 +41,10 @@ mkdir -p logs outputs
 
 source "${PROJECT_DIR}/env_vista.sh"
 
-FAMILY=${1:-hybrid}
+FAMILY=${1:-continuous_hybrid}
 case "${FAMILY}" in
-  hybrid|bull) ;;
-  *) echo "ERROR: unknown family '${FAMILY}' (hybrid|bull)" >&2; exit 1 ;;
+  continuous_hybrid|bull) ;;
+  *) echo "ERROR: unknown family '${FAMILY}' (continuous_hybrid|bull)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um

@@ -7,7 +7,7 @@
 #   tol1e4 -> Lseg 90 steps, eps 5 K;  tol1e7 -> Lseg 130 steps, eps 0.01 K.
 # Timing-only runs; efficiency = T(1)/T(P) per tolerance curve. Resumable.
 #
-# Usage:  sbatch dev/run_cr_weak_scaling_sbatch.sh <bull|hybrid>
+# Usage:  sbatch dev/run_cr_weak_scaling_sbatch.sh <bull|continuous_hybrid>
 
 #SBATCH -J cr_weak
 #SBATCH -N 64
@@ -31,8 +31,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 FAMILY=${1:-bull}
 case "${FAMILY}" in
-  bull|hybrid) ;;
-  *) echo "ERROR: unknown family '${FAMILY}' (bull|hybrid)" >&2; exit 1 ;;
+  bull|continuous_hybrid) ;;
+  *) echo "ERROR: unknown family '${FAMILY}' (bull|continuous_hybrid)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um

@@ -12,7 +12,7 @@
 # Usage:
 #   sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull
 #   sbatch scripts/scaling/run_strong_scaling_sbatch.sh texas
-#   sbatch scripts/scaling/run_strong_scaling_sbatch.sh hybrid
+#   sbatch scripts/scaling/run_strong_scaling_sbatch.sh continuous_hybrid
 #   sbatch scripts/scaling/run_strong_scaling_sbatch.sh hilbert
 #
 # Optional overrides:  RANK_SWEEP="8 4 2 1"  PLANNER_MODES="exact_dp"
@@ -47,9 +47,9 @@ PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
   bull)    PATH_CFG=configs/examples/fast_heat.ini ;;
   texas)   PATH_CFG=configs/examples/texas.ini ;;
-  hybrid)  PATH_CFG=configs/examples/hybrid_spiral_raster.ini ;;
+  continuous_hybrid) PATH_CFG=configs/examples/continuous_hybrid.ini ;;
   hilbert) PATH_CFG=configs/examples/hilbert.ini ;;
-  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|hybrid|hilbert)" >&2; exit 1 ;;
+  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|continuous_hybrid|hilbert)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um

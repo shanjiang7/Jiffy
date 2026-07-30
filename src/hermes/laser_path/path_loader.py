@@ -13,18 +13,11 @@ from .path_builders import (
     build_hilbert_nd,
     build_waypoints_nd,
     build_picture_nd,
-    build_hybrid_spiral_raster_sections_nd,
     build_continuous_hybrid_sections_nd,
     concatenate_sections_nd,
 )
 from hermes.config.units import parse_length_expr
 from hermes.utils.laser_io import load_cfg
-
-
-def _parse_bool(raw: str | None, default: bool = False) -> bool:
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
 def build_path_sections_nd_from_ini(
@@ -256,37 +249,7 @@ def build_path_sections_nd_from_ini(
             True,
         )]
 
-    # 9) hybrid spiral + raster with source-off connector
-    if "path.hybrid_spiral_raster" in cfg:
-        sec = cfg["path.hybrid_spiral_raster"]
-        x0 = parse_length_expr(sec.get("x0", "0"))
-        y0 = parse_length_expr(sec.get("y0", "0"))
-        spiral_side_m = parse_length_expr(sec["spiral_side"])
-        spiral_pitch_m = parse_length_expr(sec["spiral_pitch"])
-        spiral_dir = sec.get("spiral_dir", "outward").strip().lower()
-        raster_width_m = parse_length_expr(sec["raster_width"])
-        raster_line_pitch_m = parse_length_expr(sec["raster_line_pitch"])
-        gap_m = parse_length_expr(sec.get("gap", "0"))
-        tile_gap_m = parse_length_expr(sec.get("tile_gap", "0"))
-        repeats = int(sec.get("repeats", "1"))
-        raster_dir_sign = int(sec.get("raster_dir", "1"))
-        tile_connector_source_on = _parse_bool(sec.get("tile_connector_source_on", "false"))
-        return build_hybrid_spiral_raster_sections_nd(
-            origin_m=(x0, y0),
-            spiral_side_m=spiral_side_m,
-            spiral_pitch_m=spiral_pitch_m,
-            spiral_dir=spiral_dir,
-            raster_width_m=raster_width_m,
-            raster_line_pitch_m=raster_line_pitch_m,
-            gap_m=gap_m,
-            tile_gap_m=tile_gap_m,
-            repeats=repeats,
-            raster_dir_sign=raster_dir_sign,
-            tile_connector_source_on=tile_connector_source_on,
-            len_scale=len_scale,
-        )
-
-    # 10) continuous hybrid: interleaved double square spiral + raster,
+    # 9) continuous hybrid: interleaved double square spiral + raster,
     #     one uninterrupted laser-on stroke (no travel moves, no connectors)
     if "path.continuous_hybrid" in cfg:
         sec = cfg["path.continuous_hybrid"]
@@ -327,7 +290,6 @@ def build_waypoints_nd_from_ini(path_ini: str | Path, len_scale: float, step_nd:
     - [path.island_raster]: Grid of raster-filled islands with source-off travel between islands
     - [path.hilbert]: Continuous Hilbert space-filling curve
     - [path.picture]: Image-based path with column scanning
-    - [path.hybrid_spiral_raster]: Source-on spiral, source-off connector, source-on raster
     - [path.continuous_hybrid]: Interleaved double square spiral + raster, one laser-on stroke
     """
     sections = build_path_sections_nd_from_ini(path_ini, len_scale=len_scale, step_nd=step_nd)

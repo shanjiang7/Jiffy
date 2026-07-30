@@ -8,7 +8,7 @@
 #   - fresh run root outputs/cr_strong_scaling_h18/ (old results preserved).
 # The 1-rank runs are the baselines: timing-only, no snapshots.
 #
-# Usage:  sbatch dev/run_cr_strong_scaling_sbatch.sh <bull|texas|hybrid|hilbert>
+# Usage:  sbatch dev/run_cr_strong_scaling_sbatch.sh <bull|texas|continuous_hybrid|hilbert>
 
 #SBATCH -J cr_strong
 #SBATCH -N 8
@@ -34,9 +34,9 @@ PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
   bull)    PATH_CFG=configs/examples/fast_heat.ini ;;
   texas)   PATH_CFG=configs/examples/texas.ini ;;
-  hybrid)  PATH_CFG=configs/examples/hybrid_spiral_raster.ini ;;
+  continuous_hybrid) PATH_CFG=configs/examples/continuous_hybrid.ini ;;
   hilbert) PATH_CFG=configs/examples/hilbert.ini ;;
-  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|hybrid|hilbert)" >&2; exit 1 ;;
+  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|continuous_hybrid|hilbert)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
