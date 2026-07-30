@@ -462,7 +462,7 @@ def build_partitioned_runtime_plan(
     self_check_gamma: float | None = None,
     self_check_iterations: int = 1,
     self_check_mode: str = "horizon",
-    self_check_horizon_step_ss: int = 4,
+    self_check_horizon_step_ss: int = 2,
 ):
     dag_stage = _build_dag_stage(
         solver_mode=str(solver_mode),

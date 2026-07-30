@@ -104,7 +104,7 @@ def build_runtime_plan(
         self_check_gamma=getattr(args, "self_check_gamma_effective", None),
         self_check_iterations=int(getattr(args, "self_check_iters", 1) or 1),
         self_check_mode=str(getattr(args, "self_check_mode", "horizon")),
-        self_check_horizon_step_ss=int(getattr(args, "self_check_horizon_step", 4) or 4),
+        self_check_horizon_step_ss=int(getattr(args, "self_check_horizon_step", 2) or 2),
     )
 
 
