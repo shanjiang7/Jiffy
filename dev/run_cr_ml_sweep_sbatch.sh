@@ -26,7 +26,13 @@ mkdir -p logs outputs
 source "${PROJECT_DIR}/env_vista.sh"
 unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
-RUN_ROOT=outputs/cr_strong_scaling_ml15/bull
+PATH_NAME=${1:-bull}
+case "${PATH_NAME}" in
+  bull)              ML_CFG=configs/dev/bull_ml15.ini ;;
+  continuous_hybrid) ML_CFG=configs/dev/continuous_hybrid_ml15.ini ;;
+  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|continuous_hybrid)" >&2; exit 1 ;;
+esac
+RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}
 RANK_SWEEP=${RANK_SWEEP:-"8 16 32 64"}
 PLANNER_MODES=${PLANNER_MODES:-"exact_dp uniform"}
 
@@ -39,11 +45,11 @@ for N in ${RANK_SWEEP}; do
     fi
     mkdir -p "${OUT_DIR}"
     echo ""
-    echo "------ [$(date)] 15-layer bull: ${MODE}, ${N} rank(s) ------"
+    echo "------ [$(date)] 15-layer ${PATH_NAME}: ${MODE}, ${N} rank(s) ------"
     srun -N "${N}" -n "${N}" --ntasks-per-node=1 --kill-on-bad-exit=1 \
       python src/hermes/scripts/segment_correction/main.py \
         --config configs/examples/sim_ex1.ini \
-        --path-config configs/dev/bull_ml15.ini \
+        --path-config "${ML_CFG}" \
         --dt-us 10 \
         --planner-mode "${MODE}" --correction-weight 0.21 \
         --timing-only --no-export-dag \
@@ -53,4 +59,4 @@ done
 
 echo ""
 echo "[$(date)] 15-layer sweep complete; speedup table:"
-python3 scripts/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "bull_ml15"
+python3 scripts/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "${PATH_NAME}_ml15"
