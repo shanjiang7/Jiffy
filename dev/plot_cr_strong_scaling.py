@@ -40,7 +40,7 @@ def load(root: str, path: str) -> dict:
 
 def panel(ax, data, title, label_ranks, ideal_max, spread=1.0, label_fs=15,
           label_dx=0.0):
-    ranks = sorted(data["exact_dp"])
+    ranks = [r for r in sorted(data["exact_dp"]) if r <= ideal_max]
     for mode, color, name, dy, dx in (
             ("uniform", UNI, "Uniform", -0.52 * spread, label_dx),
             ("exact_dp", OPT, "Optimized", 0.34 * spread, -label_dx)):
@@ -70,7 +70,8 @@ def fig_8ranks() -> None:
     fig, axes = plt.subplots(2, 2, figsize=(12.6, 11.8), dpi=250)
     for ax, (key, title) in zip(axes.flat, PATHS_8R):
         data = load("outputs/cr_strong_scaling_h18", key)
-        panel(ax, data, title, label_ranks=set(range(2, 9)), ideal_max=8)
+        panel(ax, data, title, label_ranks=set(range(2, 9)), ideal_max=8,
+              spread=1.3, label_fs=17, label_dx=16.0)
         ax.set_xticks(range(1, 9))
         ax.set_ylim(0, 8.6)
     fig.tight_layout()

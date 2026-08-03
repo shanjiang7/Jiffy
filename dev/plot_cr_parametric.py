@@ -35,17 +35,18 @@ def main() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.9), dpi=250)
     for ax, (key, title) in zip(axes, PANELS):
         data = load(key)
-        for mode, color, name, dy in (("uniform", UNI, "Uniform", -19),
-                                      ("exact_dp", OPT, "Optimized", 7)):
-            xs = sorted(data[mode])
+        for mode, color, name, dy, dx in (("uniform", UNI, "Uniform", -22, 16),
+                                          ("exact_dp", OPT, "Optimized", 9, -16)):
+            xs = [r for r in sorted(data[mode]) if r <= 8]
             ys = [data[mode][r][1] for r in xs]
             ax.plot(xs, ys, color=color, lw=2.4, marker="o", ms=7, zorder=3,
                     label=name)
             for r, s in zip(xs, ys):
                 if r >= 2:
                     ax.annotate(f"{s:.2f}x", (r, s),
-                                textcoords="offset points", xytext=(2, dy),
-                                fontsize=14, color=color, ha="center")
+                                textcoords="offset points",
+                                xytext=(2 + dx, dy), fontsize=17,
+                                color=color, ha="center")
         ax.plot([1, 8], [1, 8], ls="--", color="0.6", lw=1.6, label="Ideal",
                 zorder=2)
         base = data["exact_dp"][1][0]
