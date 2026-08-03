@@ -14,6 +14,7 @@ import cupy as cp
 from hermes.utils.mpi_utils import mpi_context, bind_local_gpu
 from hermes.utils.path_utils import resolve_path
 from hermes.runtime.setup import load_sim_setup, select_float_type
+from hermes.scheduling._grouping import DEFAULT_CORRECTION_WEIGHT
 from hermes.scheduling.planning import (
     build_planning_summary,
     build_runtime_plan,
@@ -91,7 +92,7 @@ def parse_args(argv=None):
     p.add_argument(
         "--correction-weight",
         type=float,
-        default=0.25,
+        default=DEFAULT_CORRECTION_WEIGHT,
         help=(
             "Boundary-correction weight used in the predicted workload model: the cost "
             "of a segment of source-off correction stepping relative to a segment "

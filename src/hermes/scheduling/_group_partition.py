@@ -11,6 +11,7 @@ _EXACT_DP_DENSE_LIMIT = 4096
 
 from ._grouping import (
     CORRECTION_FIXED_COST_SS,
+    DEFAULT_CORRECTION_WEIGHT,
     _boundary_cut_correction_from_depth,
     _compute_cut_depths,
     _compute_max_out_dst,
@@ -54,12 +55,45 @@ def _build_partition_summary(
     }
 
 
+def make_range_cost(
+    n_ss: int,
+    edge_pairs: list[tuple[int, int]],
+    *,
+    segments_per_supersegment: int,
+    correction_weight: float,
+    ss_per_layer: int | None,
+):
+    """Single source of the partition cost model.
+
+    cost(s, e) = base(s, e) + (w * depth * sps + a0 * sps if depth > 0),
+    where depth = max(max_out_dst[s..e]) - e is the range's own outgoing
+    fused march and a0 = CORRECTION_FIXED_COST_SS. Returns
+    (prefix_sums, max_out_dst, range_cost) with O(1) range_cost queries via
+    a sparse range-max table. Both DP backends evaluate exactly this
+    closure, so the model cannot drift between them.
+    """
+    sps = float(int(segments_per_supersegment))
+    w = float(correction_weight)
+    fixed = float(CORRECTION_FIXED_COST_SS) * sps
+    prefix_sums = [sps * (i + 1) for i in range(int(n_ss))]
+    max_out_dst = _compute_max_out_dst(int(n_ss), edge_pairs, ss_per_layer=ss_per_layer)
+    rmax_table = _build_range_max_table(max_out_dst)
+
+    def range_cost(start_ss: int, end_ss: int) -> float:
+        base_start = prefix_sums[start_ss - 1] if start_ss > 0 else 0.0
+        depth = _range_max(rmax_table, start_ss, end_ss) - end_ss
+        corr = (w * float(depth) * sps + fixed) if depth > 0 else 0.0
+        return (prefix_sums[end_ss] - base_start) + corr
+
+    return prefix_sums, max_out_dst, range_cost
+
+
 def _prepare_dp_cost_data(
     *,
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
     cut_depths: list[int] | None = None,
     ss_per_layer: int | None = None,
 ) -> tuple[float, list[int], list[list[float]]]:
@@ -78,29 +112,20 @@ def _prepare_dp_cost_data(
     if int(n_ss) <= 0:
         return 0.0, [], []
 
-    sps = float(int(segments_per_supersegment))
-    w = float(correction_weight)
-    fixed = float(CORRECTION_FIXED_COST_SS) * sps
-    prefix_sums: list[float] = []
-    running_base = 0.0
-    for _i in range(int(n_ss)):
-        running_base += sps
-        prefix_sums.append(running_base)
+    prefix_sums, max_out_dst, range_cost = make_range_cost(
+        int(n_ss),
+        edge_pairs,
+        segments_per_supersegment=int(segments_per_supersegment),
+        correction_weight=float(correction_weight),
+        ss_per_layer=ss_per_layer,
+    )
     total_base_work = float(prefix_sums[-1])
-
-    max_out_dst = _compute_max_out_dst(int(n_ss), edge_pairs, ss_per_layer=ss_per_layer)
 
     segment_costs = [[0.0 for _ in range(int(n_ss))] for _ in range(int(n_ss))]
     for start_ss in range(int(n_ss)):
-        base_start = prefix_sums[start_ss - 1] if start_ss > 0 else 0.0
-        run_dst = start_ss
         row = segment_costs[start_ss]
         for end_ss in range(start_ss, int(n_ss)):
-            if max_out_dst[end_ss] > run_dst:
-                run_dst = max_out_dst[end_ss]
-            depth = run_dst - end_ss
-            corr = (w * float(depth) * sps + fixed) if depth > 0 else 0.0
-            row[end_ss] = (prefix_sums[end_ss] - base_start) + corr
+            row[end_ss] = range_cost(start_ss, end_ss)
 
     return total_base_work, max_out_dst, segment_costs
 
@@ -110,7 +135,7 @@ def _prepare_dp_work_model(
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
     cut_depths: list[int] | None = None,
 ) -> tuple[float, list[dict], list[float]]:
     if int(n_ss) <= 0:
@@ -393,7 +418,7 @@ def partition_supersegments_dp(
     *,
     num_processors: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
     cut_depths: list[int] | None = None,
     verify_monotonicity: bool = False,
     ss_per_layer: int | None = None,
@@ -494,7 +519,7 @@ def partition_supersegments_fast_dp(
     *,
     num_processors: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
     cut_depths: list[int] | None = None,
     verify_monotonicity: bool = False,
     ss_per_layer: int | None = None,
@@ -544,23 +569,15 @@ def partition_supersegments_fast_dp(
     # keeping the crossing-point search at O(n log n) evaluations per
     # processor row — the scalable path for multi-layer problems.
     _ = cut_depths
-    sps = float(int(segments_per_supersegment))
-    w = float(correction_weight)
-    fixed_cost = float(CORRECTION_FIXED_COST_SS) * sps
-    prefix_sums = []
-    running_base = 0.0
-    for _i in range(int(n_ss)):
-        running_base += sps
-        prefix_sums.append(running_base)
+    prefix_sums, max_out_dst, range_cost = make_range_cost(
+        int(n_ss),
+        edge_pairs,
+        segments_per_supersegment=int(segments_per_supersegment),
+        correction_weight=float(correction_weight),
+        ss_per_layer=ss_per_layer,
+    )
     total_base_work = float(prefix_sums[-1])
-    max_out_dst = _compute_max_out_dst(int(n_ss), edge_pairs, ss_per_layer=ss_per_layer)
     rmax_table = _build_range_max_table(max_out_dst)
-
-    def range_cost(start_ss: int, end_ss: int) -> float:
-        base_start = prefix_sums[start_ss - 1] if start_ss > 0 else 0.0
-        depth = _range_max(rmax_table, start_ss, end_ss) - end_ss
-        corr = (w * float(depth) * sps + fixed_cost) if depth > 0 else 0.0
-        return (prefix_sums[end_ss] - base_start) + corr
 
     partitions, num_used_processors, cut_table, dp_stats = _compute_fast_dp_partitions(
         n_items=int(n_ss),
@@ -613,7 +630,7 @@ def direct_partition_dag_n1(
     edge_pairs: list[tuple[int, int]],
     *,
     num_processors: int,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
     cut_depths: list[int] | None = None,
     ss_per_layer: int | None = None,
 ) -> dict:

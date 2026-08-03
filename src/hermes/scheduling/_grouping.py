@@ -15,6 +15,12 @@ import os
 # Override for calibration experiments via HERMES_CORRECTION_FIXED_COST_SS.
 CORRECTION_FIXED_COST_SS = float(os.environ.get("HERMES_CORRECTION_FIXED_COST_SS", "7.9"))
 
+# Calibrated slope of the affine correction-cost model (w in w*span + a0),
+# fitted together with CORRECTION_FIXED_COST_SS above; every published
+# result uses this value. Single source of truth for all signature and CLI
+# defaults.
+DEFAULT_CORRECTION_WEIGHT = 0.21
+
 
 def _compute_cut_depths(n_ss: int, edge_pairs: list[tuple[int, int]]) -> list[int]:
     if int(n_ss) <= 1:
@@ -62,7 +68,7 @@ def _boundary_cut_correction_from_depth(
     *,
     cut_depth: int,
     segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
+    correction_weight: float = DEFAULT_CORRECTION_WEIGHT,
 ) -> dict:
     correction_span_ss = float(max(0, int(cut_depth)))
     correction_span_segments = float(correction_span_ss) * float(segments_per_supersegment)
