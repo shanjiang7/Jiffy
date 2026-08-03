@@ -50,7 +50,7 @@ def _build_partition_summary(
     }
 
 
-def _prepare_exact_dp_cost_data(
+def _prepare_dp_cost_data(
     *,
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
@@ -165,7 +165,7 @@ def _segment_cost_from_work_model(
     )
 
 
-def _compute_exact_dp_partitions(
+def _compute_dp_partitions(
     *,
     n_items: int,
     num_processors: int,
@@ -228,7 +228,7 @@ def _range_max(table: list[list[int]], lo: int, hi: int) -> int:
     return max(row[lo], row[hi - (1 << k) + 1])
 
 
-def _compute_monotone_dp_partitions(
+def _compute_fast_dp_partitions(
     *,
     n_items: int,
     num_processors: int,
@@ -394,26 +394,49 @@ def partition_supersegments_exact_dp(
     verify_monotonicity: bool = False,
     ss_per_layer: int | None = None,
 ) -> dict:
+    """Exact minimax partitioner: dispatches between the two DP backends.
+
+    - `partition_supersegments_dp`: dense O(n^2) cost table, used up to
+      _EXACT_DP_DENSE_LIMIT supersegments.
+    - `partition_supersegments_fast_dp`: crossing-point binary search,
+      O(P n log n) time / O(P n) memory, used above the limit (the dense
+      table is infeasible for multi-layer problems).
+    The two produce identical partitions (equivalence property-tested over
+    3000 randomized DAG/P cases, 2026-07-29).
+    """
+    backend = (
+        partition_supersegments_fast_dp
+        if int(n_ss) > _EXACT_DP_DENSE_LIMIT
+        else partition_supersegments_dp
+    )
+    return backend(
+        int(n_ss),
+        edge_pairs,
+        num_processors=int(num_processors),
+        segments_per_supersegment=int(segments_per_supersegment),
+        correction_weight=float(correction_weight),
+        cut_depths=cut_depths,
+        verify_monotonicity=bool(verify_monotonicity),
+        ss_per_layer=ss_per_layer,
+    )
+
+
+def partition_supersegments_dp(
+    n_ss: int,
+    edge_pairs: list[tuple[int, int]],
+    *,
+    num_processors: int,
+    segments_per_supersegment: int = 1,
+    correction_weight: float = 0.25,
+    cut_depths: list[int] | None = None,
+    verify_monotonicity: bool = False,
+    ss_per_layer: int | None = None,
+) -> dict:
+    """Dense exact DP over the full O(n^2) cost table."""
     if int(n_ss) < 0:
         raise ValueError("n_ss must be >= 0")
     if int(num_processors) < 1:
         raise ValueError("num_processors must be >= 1")
-
-    # The dense O(n^2) cost table is infeasible for large multi-layer
-    # problems; the crossing-point search produces identical partitions
-    # (equivalence property-tested over 3000 randomized DAG/P cases,
-    # 2026-07-29) in O(P n log n) time and O(P n) memory.
-    if int(n_ss) > _EXACT_DP_DENSE_LIMIT:
-        return partition_supersegments_monotone_dp(
-            int(n_ss),
-            edge_pairs,
-            num_processors=int(num_processors),
-            segments_per_supersegment=int(segments_per_supersegment),
-            correction_weight=float(correction_weight),
-            cut_depths=cut_depths,
-            verify_monotonicity=bool(verify_monotonicity),
-            ss_per_layer=ss_per_layer,
-        )
 
     rank_assignments = {rank: [] for rank in range(int(num_processors))}
     rank_loads = {rank: 0.0 for rank in range(int(num_processors))}
@@ -447,7 +470,7 @@ def partition_supersegments_exact_dp(
             }
         return summary
 
-    total_base_work, max_out_dst, segment_costs = _prepare_exact_dp_cost_data(
+    total_base_work, max_out_dst, segment_costs = _prepare_dp_cost_data(
         n_ss=int(n_ss),
         edge_pairs=edge_pairs,
         segments_per_supersegment=int(segments_per_supersegment),
@@ -455,7 +478,7 @@ def partition_supersegments_exact_dp(
         cut_depths=cut_depths,
         ss_per_layer=ss_per_layer,
     )
-    partitions, num_used_processors, cut_table = _compute_exact_dp_partitions(
+    partitions, num_used_processors, cut_table = _compute_dp_partitions(
         n_items=int(n_ss),
         num_processors=int(num_processors),
         segment_costs=segment_costs,
@@ -499,7 +522,7 @@ def partition_supersegments_exact_dp(
     return summary
 
 
-def partition_supersegments_monotone_dp(
+def partition_supersegments_fast_dp(
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
     *,
@@ -533,7 +556,7 @@ def partition_supersegments_monotone_dp(
             total_base_workload=0.0,
             num_processors=int(num_processors),
         )
-        summary["dp_algorithm"] = "monotone_divide_and_conquer"
+        summary["dp_algorithm"] = "crossing_point_binary_search"
         summary["dp_transition_evaluations"] = 0
         if bool(verify_monotonicity):
             summary["dp_monotonicity"] = {
@@ -549,12 +572,11 @@ def partition_supersegments_monotone_dp(
             }
         return summary
 
-    # Same source-charged cost as exact_dp, evaluated on the fly (no O(n^2)
-    # table): cost(s, e) = base(s, e) + w*depth + a0, depth = rangemax(
-    # max_out_dst[s..e]) - e. Sparse table gives O(1) range max, keeping the
-    # divide-and-conquer at O(n log n) evaluations and O(n log n) memory —
-    # the scalable path for multi-layer problems where exact_dp's n^2 table
-    # is infeasible.
+    # Same source-charged cost as the dense DP, evaluated on the fly (no
+    # O(n^2) table): cost(s, e) = base(s, e) + w*depth + a0, depth =
+    # rangemax(max_out_dst[s..e]) - e. A sparse table gives O(1) range max,
+    # keeping the crossing-point search at O(n log n) evaluations per
+    # processor row — the scalable path for multi-layer problems.
     _ = cut_depths
     sps = float(int(segments_per_supersegment))
     w = float(correction_weight)
@@ -574,7 +596,7 @@ def partition_supersegments_monotone_dp(
         corr = (w * float(depth) * sps + fixed_cost) if depth > 0 else 0.0
         return (prefix_sums[end_ss] - base_start) + corr
 
-    partitions, num_used_processors, cut_table, dp_stats = _compute_monotone_dp_partitions(
+    partitions, num_used_processors, cut_table, dp_stats = _compute_fast_dp_partitions(
         n_items=int(n_ss),
         num_processors=int(num_processors),
         prefix_sums=prefix_sums,
@@ -711,6 +733,7 @@ def direct_partition_dag_n1(
 
 __all__ = [
     "partition_supersegments_exact_dp",
-    "partition_supersegments_monotone_dp",
+    "partition_supersegments_dp",
+    "partition_supersegments_fast_dp",
     "direct_partition_dag_n1",
 ]
