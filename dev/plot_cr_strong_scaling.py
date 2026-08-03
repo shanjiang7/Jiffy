@@ -38,10 +38,10 @@ def load(root: str, path: str) -> dict:
     return out
 
 
-def panel(ax, data, title, label_ranks, ideal_max):
+def panel(ax, data, title, label_ranks, ideal_max, spread=1.0):
     ranks = sorted(data["exact_dp"])
-    for mode, color, name, dy in (("uniform", UNI, "Uniform", -0.52),
-                                  ("exact_dp", OPT, "Optimized", 0.34)):
+    for mode, color, name, dy in (("uniform", UNI, "Uniform", -0.52 * spread),
+                                  ("exact_dp", OPT, "Optimized", 0.34 * spread)):
         xs = ranks
         ys = [data[mode][r][1] for r in xs]
         ax.plot(xs, ys, color=color, lw=2.4, marker="o", ms=7, zorder=3,
@@ -77,17 +77,16 @@ def fig_8ranks() -> None:
 
 
 def fig_ml15() -> None:
+    # Linear axes: near-ideal curves on log-log collapse onto the diagonal
+    # and hide the DP-vs-uniform gap at 32-64 ranks.
     fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.9), dpi=250)
     for ax, (key, title) in zip(axes.flat, PATHS_ML):
         data = load("outputs/cr_strong_scaling_ml15", key)
         panel(ax, data, f"{title} (15 layers)",
-              label_ranks={8, 16, 32, 64}, ideal_max=64)
-        ax.set_xscale("log", base=2)
-        ax.set_yscale("log", base=2)
+              label_ranks={16, 32, 64}, ideal_max=64, spread=2.2)
         ax.set_xticks([1, 8, 16, 32, 64])
-        ax.set_xticklabels(["1", "8", "16", "32", "64"])
-        ax.set_yticks([1, 8, 16, 32, 64])
-        ax.set_yticklabels(["1", "8", "16", "32", "64"])
+        ax.set_xlim(-1, 67)
+        ax.set_ylim(0, 68)
     fig.tight_layout()
     fig.savefig("outputs/cr_strong_scaling_ml15/strong_scaling_ml15.png")
     print("[ok] outputs/cr_strong_scaling_ml15/strong_scaling_ml15.png")
