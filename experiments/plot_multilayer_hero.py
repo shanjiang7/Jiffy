@@ -15,7 +15,7 @@ Mockup uses a uniform 64-way split; swap in the real exact_dp boundaries via
 --plan-json (a JSON list of the 64 (start_ss, end_ss) global SS ranges).
 
 Usage:
-    python dev/plot_multilayer_hero.py [--ranks 64] [--layers 15]
+    python experiments/plot_multilayer_hero.py [--ranks 64] [--layers 15]
         [--out outputs/ml15_parallel_hero.png]
 """
 from __future__ import annotations

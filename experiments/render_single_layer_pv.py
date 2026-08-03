@@ -5,7 +5,7 @@ rank chunks as distinct colors and each rank's comoving-domain field block
 (black-body volume) at its true mid-chunk position. White background.
 
 Run:  module load gcc/15.1.0 cuda/13.0 openmpi/5.0.9 paraview_osmesa/5.13.3
-      pvbatch dev/render_single_layer_pv.py [layer]
+      pvbatch experiments/render_single_layer_pv.py [layer]
 """
 import json
 import sys

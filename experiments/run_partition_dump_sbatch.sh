@@ -1,8 +1,8 @@
 #!/bin/bash
 # Dump the real exact_dp 64-rank partition for the 15-layer bull (planning
-# only, no solve; single GPU). Feeds dev/plot_multilayer_hero.py.
+# only, no solve; single GPU). Feeds experiments/plot_multilayer_hero.py.
 #
-# Usage:  sbatch dev/run_partition_dump_sbatch.sh [bull|continuous_hybrid]
+# Usage:  sbatch experiments/run_partition_dump_sbatch.sh [bull|continuous_hybrid]
 
 #SBATCH -J ml15_plan
 #SBATCH -N 1
@@ -26,13 +26,13 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
-  bull)              ML_CFG=configs/dev/bull_ml15.ini ;;
-  continuous_hybrid) ML_CFG=configs/dev/continuous_hybrid_ml15.ini ;;
+  bull)              ML_CFG=configs/experiments/bull_ml15.ini ;;
+  continuous_hybrid) ML_CFG=configs/experiments/continuous_hybrid_ml15.ini ;;
   *) echo "ERROR: unknown path '${PATH_NAME}'" >&2; exit 1 ;;
 esac
 
 srun -N 1 -n 1 --kill-on-bad-exit=1 \
-  python dev/dump_partition_plan.py \
+  python experiments/dump_partition_plan.py \
     --config configs/examples/sim_ex1.ini \
     --path-config "${ML_CFG}" \
     --dt-us 10 \

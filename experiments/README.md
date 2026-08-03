@@ -17,7 +17,7 @@ skipped, so re-submitting after a timeout continues where it stopped.
 | Accuracy tables: straight-line rows | `../scripts/accuracy/run_accuracy_straight_sbatch.sh` | — |
 | Accuracy tables: max DAG in-degree column | — (CPU-only, cached r_eps) | `dag_indegree_stats.py` |
 | Self-convergence table | `run_self_convergence_sbatch.sh` | (table printed by the job) |
-| Scan-path overview figure | — | `plot_scan_paths.py` (viz-only coarsened configs in `configs/dev/`) |
+| Scan-path overview figure | — | `plot_scan_paths.py` (viz-only coarsened configs in `configs/experiments/`) |
 | 64-rank partition dump (visualizations) | `run_partition_dump_sbatch.sh <path>` (or `dump_partition_plan.py` on a GPU node) | — |
 | Multi-layer visualization (ParaView bundle) | — | `build_pv_bundle.py`, `make_pv_state.py`, `render_single_layer_pv.py`, `plot_multilayer_hero.py` |
 

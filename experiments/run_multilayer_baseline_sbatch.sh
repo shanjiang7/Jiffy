@@ -5,7 +5,7 @@
 # uniform baseline instead of burning a second multi-hour run (identical
 # physics; the copy is logged).
 #
-# Usage:  sbatch dev/run_multilayer_baseline_sbatch.sh <bull|continuous_hybrid>
+# Usage:  sbatch experiments/run_multilayer_baseline_sbatch.sh <bull|continuous_hybrid>
 
 #SBATCH -J cr_ml_base
 #SBATCH -N 1
@@ -29,8 +29,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
-  bull)              ML_CFG=configs/dev/bull_ml15.ini ;;
-  continuous_hybrid) ML_CFG=configs/dev/continuous_hybrid_ml15.ini ;;
+  bull)              ML_CFG=configs/experiments/bull_ml15.ini ;;
+  continuous_hybrid) ML_CFG=configs/experiments/continuous_hybrid_ml15.ini ;;
   *) echo "ERROR: unknown path '${PATH_NAME}' (bull|continuous_hybrid)" >&2; exit 1 ;;
 esac
 RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}

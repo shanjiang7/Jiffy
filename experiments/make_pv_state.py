@@ -4,7 +4,7 @@ Assemble the ParaView scene for the 15-layer x 64-rank bundle and save it as
 scene.pvsm (openable locally in ParaView 5.13) plus a preview screenshot.
 
 Run:  module load gcc/15.1.0 cuda/13.0 openmpi/5.0.9 paraview_osmesa/5.13.3
-      pvbatch dev/make_pv_state.py
+      pvbatch experiments/make_pv_state.py
 """
 import glob
 

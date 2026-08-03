@@ -6,7 +6,7 @@
 # 1-64. Note: at 64 ranks a single layer is ~26 SS/rank (starvation
 # regime); this exists to show the granularity limit if wanted.
 #
-# Usage:  sbatch dev/run_strong_scaling_64ranks_sbatch.sh <bull|continuous_hybrid>
+# Usage:  sbatch experiments/run_strong_scaling_64ranks_sbatch.sh <bull|continuous_hybrid>
 
 #SBATCH -J cr_strong64
 #SBATCH -N 64

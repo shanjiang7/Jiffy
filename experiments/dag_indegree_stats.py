@@ -10,7 +10,7 @@ Builds only the dependency DAG (no partitioning, no solve). The r_eps
 lookup is served from .hermes_cache, so a GPU is not needed when the cache
 is warm (all accuracy configs have been built many times).
 
-Usage: python dev/dag_indegree_stats.py [config.ini ...]
+Usage: python experiments/dag_indegree_stats.py [config.ini ...]
 """
 from __future__ import annotations
 

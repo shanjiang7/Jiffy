@@ -21,10 +21,10 @@ from hermes.laser_path.path_loader import build_path_sections_nd_from_ini
 # variants) so the path structure is visible at figure scale; the
 # spiral-raster unit is shown at true geometry.
 PANELS = [
-    ("configs/dev/bull_viz.ini", "Bull"),
-    ("configs/dev/texas_viz.ini", "Texas"),
-    ("configs/dev/continuous_hybrid_unit.ini", "Spiral-Raster"),
-    ("configs/dev/hilbert_viz.ini", "Hilbert"),
+    ("configs/experiments/bull_viz.ini", "Bull"),
+    ("configs/experiments/texas_viz.ini", "Texas"),
+    ("configs/experiments/continuous_hybrid_unit.ini", "Spiral-Raster"),
+    ("configs/experiments/hilbert_viz.ini", "Hilbert"),
 ]
 CMAP = plt.get_cmap("viridis")
 

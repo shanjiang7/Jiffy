@@ -6,13 +6,13 @@ Replicates rank 0's planning path from segment_correction/main.py
 (load_sim_setup -> build_runtime_plan) for a given world size, then writes:
   plan_summary.json   full planning summary (build_planning_summary)
   plan_bounds.json    [[start_frac, end_frac], ...] per rank over total SS —
-                      the input format of dev/plot_multilayer_hero.py
+                      the input format of experiments/plot_multilayer_hero.py
 
 The planner is deterministic, so this reproduces the cuts the timing-only
 scaling runs used. Single GPU, no MPI.
 
 Usage:
-  python dev/dump_partition_plan.py --path-config configs/dev/bull_ml15.ini \
+  python experiments/dump_partition_plan.py --path-config configs/experiments/bull_ml15.ini \
       --world-size 64 --out-dir outputs/cr_strong_scaling_ml15/bull/plan_dump_64r
 """
 from __future__ import annotations

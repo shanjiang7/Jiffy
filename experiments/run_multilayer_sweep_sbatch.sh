@@ -4,7 +4,7 @@
 # 25,170 SS -> exact_dp auto-delegates to the crossing-point search with
 # layer-clamped charged spans. Submit with --dependency=afterok:<baseline>.
 #
-# Usage:  sbatch --dependency=afterok:<baseline job> dev/run_multilayer_sweep_sbatch.sh
+# Usage:  sbatch --dependency=afterok:<baseline job> experiments/run_multilayer_sweep_sbatch.sh
 
 #SBATCH -J cr_ml_sweep
 #SBATCH -N 64
@@ -28,8 +28,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
-  bull)              ML_CFG=configs/dev/bull_ml15.ini ;;
-  continuous_hybrid) ML_CFG=configs/dev/continuous_hybrid_ml15.ini ;;
+  bull)              ML_CFG=configs/experiments/bull_ml15.ini ;;
+  continuous_hybrid) ML_CFG=configs/experiments/continuous_hybrid_ml15.ini ;;
   *) echo "ERROR: unknown path '${PATH_NAME}' (bull|continuous_hybrid)" >&2; exit 1 ;;
 esac
 RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}

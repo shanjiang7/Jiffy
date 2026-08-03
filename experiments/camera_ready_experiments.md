@@ -42,7 +42,7 @@ Two problem sizes, ranks 8,16,24,...,64 x {uniform, exact_dp}:
 ## 3. Runtime breakdowns (figC style)                   [no new jobs]
 - 8 + 64 ranks, single-layer Bull and multi-layer Bull, uniform vs DP.
 - Rendered from the timing summaries of #2's same-allocation pairs via
-  dev/plot_meeting_figs.py fig_c_scaled (already path/dataset-generic).
+  experiments/plot_meeting_figs.py fig_c_scaled (already path/dataset-generic).
 
 ## 4. Accuracy vs cut count                             [Tables IV/V extension]
 - Paths: bull, spiral-raster; tolerances: 1e-4, 1e-7 (h = 30 um accuracy

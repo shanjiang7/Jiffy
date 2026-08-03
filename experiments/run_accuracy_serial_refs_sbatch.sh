@@ -5,7 +5,7 @@
 # nodes. New refs land in <root>/serial_s10/ so the stride-25 refs stay
 # untouched. Resumable: an existing serial_s10/snapshots_ser is skipped.
 #
-# Usage:  sbatch dev/run_accuracy_serial_refs_sbatch.sh
+# Usage:  sbatch experiments/run_accuracy_serial_refs_sbatch.sh
 
 #SBATCH -J cr_ser_s10
 #SBATCH -N 4

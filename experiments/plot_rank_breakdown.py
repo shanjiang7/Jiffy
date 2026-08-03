@@ -11,9 +11,9 @@ plain linear axis (use when the variation is large, e.g. single layer).
 
 Examples:
   # 15-layer Bull, 64 ranks (paper default)
-  python dev/plot_rank_breakdown.py
+  python experiments/plot_rank_breakdown.py
   # single-layer, flat axis, gate-style layout
-  python dev/plot_rank_breakdown.py --root outputs/cr_strong_scaling_h18/bull \
+  python experiments/plot_rank_breakdown.py --root outputs/cr_strong_scaling_h18/bull \
       --run parallel_64r --no-break --out .../rank_breakdown_64r_1layer.png
 """
 from __future__ import annotations
