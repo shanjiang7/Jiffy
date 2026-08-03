@@ -12,6 +12,7 @@ Data: outputs/cr_strong_scaling_ml15/bull/<planner>/parallel_64r/
 """
 from __future__ import annotations
 
+import argparse
 import json
 
 import matplotlib
@@ -19,15 +20,34 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = "outputs/cr_strong_scaling_ml15/bull"
+ap = argparse.ArgumentParser()
+ap.add_argument("--root", default="outputs/cr_strong_scaling_ml15/bull")
+ap.add_argument("--run", default="parallel_64r")
+ap.add_argument("--out",
+                default="outputs/cr_strong_scaling_ml15/rank_breakdown_64r.png")
+ap.add_argument("--ylo", nargs=2, type=float, default=(0, 50),
+                help="lower axis segment (start, end)")
+ap.add_argument("--yhi", nargs=2, type=float, default=(150, 250),
+                help="upper axis segment (start, end)")
+ap.add_argument("--no-break", action="store_true",
+                help="single continuous y axis (use when variation is large)")
+ap.add_argument("--dp-dir", default=None,
+                help="override subdir for the optimized run (flat layouts)")
+ap.add_argument("--uniform-dir", default=None,
+                help="override subdir for the uniform run (flat layouts)")
+ARGS = ap.parse_args()
+
+ROOT = ARGS.root
 BASE_C = "#9dc3e6"
 CORR_C = "#c1272d"
-Y_LO = (0, 50)
-Y_HI = (150, 250)
+Y_LO = tuple(ARGS.ylo)
+Y_HI = tuple(ARGS.yhi)
 
 
 def load(planner: str):
-    d = json.load(open(f"{ROOT}/{planner}/parallel_64r/timing_summary.json"))
+    override = ARGS.dp_dir if planner == "exact_dp" else ARGS.uniform_dir
+    sub = override if override else f"{planner}/{ARGS.run}"
+    d = json.load(open(f"{ROOT}/{sub}/timing_summary.json"))
     rows = d["rank_timing_breakdown"]
     rows = rows if isinstance(rows, list) else list(rows.values())
     base = [r["base_solve_seconds"] for r in rows]
@@ -45,15 +65,15 @@ def draw_panel(ax_hi, ax_lo, planner: str, title: str):
         ax.bar(ranks, base, width=0.82, color=BASE_C, label="Source-on solve")
         ax.bar(ranks, corr, width=0.82, bottom=base, color=CORR_C,
                label="Correction")
-        ax.set_xlim(-1, 64)
+        ax.set_xlim(-1, len(base))
         ax.grid(axis="y", alpha=0.3)
         ax.tick_params(labelsize=14)
     ax_hi.axhline(mx, ls="--", color="k", lw=1.4)
-    ax_hi.text(63.6, mx + 2.5, f"max {mx:.0f} s   (max/mean = {mx/mean:.2f})",
+    ax_hi.text(len(base) - 0.4, mx + 0.025 * (Y_HI[1] - Y_HI[0]), f"max {mx:.0f} s   (max/mean = {mx/mean:.2f})",
                ha="right", fontsize=15)
     ax_hi.set_ylim(*Y_HI)
     ax_lo.set_ylim(*Y_LO)
-    ax_lo.set_yticks([0, 50])
+    ax_lo.set_yticks(list(Y_LO))
     ax_hi.set_title(f"{title} partitioning", fontsize=19, loc="left", pad=8)
     # Broken-axis cosmetics.
     ax_hi.spines.bottom.set_visible(False)
@@ -66,7 +86,39 @@ def draw_panel(ax_hi, ax_lo, planner: str, title: str):
     ax_lo.plot([0, 1], [1, 1], transform=ax_lo.transAxes, **kw)
 
 
+def draw_flat(ax, planner: str, title: str):
+    base, corr = load(planner)
+    ranks = range(len(base))
+    tot = [b + c for b, c in zip(base, corr)]
+    mx, mean = max(tot), sum(tot) / len(tot)
+    ax.bar(ranks, base, width=0.82, color=BASE_C, label="Source-on solve")
+    ax.bar(ranks, corr, width=0.82, bottom=base, color=CORR_C,
+           label="Correction")
+    ax.axhline(mx, ls="--", color="k", lw=1.4)
+    ax.text(len(base) - 0.4, mx + 0.03 * mx,
+            f"max {mx:.0f} s   (max/mean = {mx/mean:.2f})",
+            ha="right", fontsize=15)
+    ax.set_xlim(-1, len(base))
+    ax.set_ylim(0, 1.18 * mx)
+    ax.grid(axis="y", alpha=0.3)
+    ax.tick_params(labelsize=14)
+    ax.set_title(f"{title} partitioning", fontsize=19, loc="left", pad=8)
+
+
 def main() -> None:
+    if ARGS.no_break:
+        fig, (a0, a1) = plt.subplots(2, 1, figsize=(12.6, 7.6), dpi=250,
+                                     sharex=True, sharey=True)
+        draw_flat(a0, "exact_dp", "Optimized")
+        draw_flat(a1, "uniform", "Uniform")
+        a0.legend(fontsize=15, loc="lower right", framealpha=0.95)
+        a1.set_xlabel("Rank", fontsize=17)
+        a0.set_ylabel("Busy time [s]", fontsize=17)
+        a1.set_ylabel("Busy time [s]", fontsize=17)
+        fig.tight_layout()
+        fig.savefig(ARGS.out)
+        print(f"[ok] {ARGS.out}")
+        return
     fig, axes = plt.subplots(
         5, 1, figsize=(12.6, 9.0), dpi=250, sharex=True,
         gridspec_kw=dict(height_ratios=[3, 1, 0.55, 3, 1], hspace=0.08))
@@ -76,7 +128,7 @@ def main() -> None:
     axes[0].legend(fontsize=15, loc="lower right", framealpha=0.95)
     axes[4].set_xlabel("Rank", fontsize=17)
     fig.supylabel("Busy time [s]", fontsize=17, x=0.02)
-    out = "outputs/cr_strong_scaling_ml15/rank_breakdown_64r.png"
+    out = ARGS.out
     fig.savefig(out)
     print(f"[ok] {out}")
 
