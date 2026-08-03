@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 DAG in-degree statistics per path/configuration, for the accuracy tables:
-in-degree of a supersegment = number of retained cross-dependencies feeding
-it, a partition-independent measure of revisit density (replaces "global
-max cut depth", which conflates path structure with the partition).
+in-degree of a supersegment = number of retained predecessor dependencies
+feeding it (including the chain edge, so a straight path reads 1), a
+partition-independent measure of revisit density (replaces "global max cut
+depth", which conflates path structure with the partition).
 
 Builds only the dependency DAG (no partitioning, no solve). The r_eps
 lookup is served from .hermes_cache, so a GPU is not needed when the cache
@@ -54,7 +55,7 @@ def main() -> None:
         chain = sum(1 for e in res.edges if int(e.dst) == int(e.src) + 1)
         cross = [(int(e.src), int(e.dst)) for e in res.edges
                  if int(e.dst) != int(e.src) + 1]
-        indeg = Counter(d for _, d in cross)
+        indeg = Counter(int(e.dst) for e in res.edges)
         vals = np.array([indeg.get(i, 0) for i in range(n)])
         arg = int(vals.argmax())
         print(f"{cfg:44s} {n:6d} {chain:6d} {len(cross):7d} "
