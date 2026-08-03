@@ -28,13 +28,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--root", default="outputs/cr_strong_scaling_ml15/bull")
+ap.add_argument("--roots", nargs="+",
+                default=["outputs/cr_strong_scaling_ml15/bull",
+                         "outputs/cr_strong_scaling_ml15/continuous_hybrid"])
+ap.add_argument("--titles", nargs="+", default=["Bull", "Spiral-Raster"])
 ap.add_argument("--run", default="parallel_64r")
 ap.add_argument("--out",
                 default="outputs/cr_strong_scaling_ml15/rank_breakdown_64r.png")
 ap.add_argument("--squeeze", nargs=2, type=float, default=(50.0, 170.0),
                 help="y band to compress (start, end)")
-ap.add_argument("--ymax", type=float, default=250.0)
+ap.add_argument("--ymax", type=float, default=None,
+                help="top of y axis (default: auto from data)")
 ap.add_argument("--no-break", action="store_true",
                 help="plain linear y axis (large-variation cases)")
 ap.add_argument("--dp-dir", default=None,
@@ -64,10 +68,10 @@ def inv(z):
                              SQ_HI + (z - z1)))
 
 
-def load(planner: str):
+def load(root: str, planner: str):
     override = ARGS.dp_dir if planner == "exact_dp" else ARGS.uniform_dir
     sub = override if override else f"{planner}/{ARGS.run}"
-    d = json.load(open(f"{ARGS.root}/{sub}/timing_summary.json"))
+    d = json.load(open(f"{root}/{sub}/timing_summary.json"))
     rows = d["rank_timing_breakdown"]
     rows = rows if isinstance(rows, list) else list(rows.values())
     base = [r["base_solve_seconds"] for r in rows]
@@ -76,8 +80,8 @@ def load(planner: str):
     return base, corr
 
 
-def draw(ax, planner: str, title: str, squeeze: bool):
-    base, corr = load(planner)
+def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float):
+    base, corr = load(root, planner)
     ranks = range(len(base))
     tot = [b + c for b, c in zip(base, corr)]
     mx, mean = max(tot), sum(tot) / len(tot)
@@ -97,10 +101,10 @@ def draw(ax, planner: str, title: str, squeeze: bool):
         ax.set_ylim(0, 1.18 * mx)
         return
     ax.set_yscale("function", functions=(fwd, inv))
-    ax.set_ylim(0, ARGS.ymax)
+    ax.set_ylim(0, ymax)
     lo_ticks = [0, SQ_LO]
     hi_start = int(np.ceil(SQ_HI / 20.0)) * 20
-    ax.set_yticks(lo_ticks + list(range(hi_start, int(ARGS.ymax) + 1, 20)))
+    ax.set_yticks(lo_ticks + list(range(hi_start, int(ymax) + 1, 20)))
     # Break marks on the y spine at the compressed band.
     d = 0.4
     kw = dict(marker=[(-1, -d), (1, d)], markersize=10, linestyle="none",
@@ -112,12 +116,28 @@ def draw(ax, planner: str, title: str, squeeze: bool):
 
 def main() -> None:
     squeeze = not ARGS.no_break
-    fig, (a0, a1) = plt.subplots(2, 1, figsize=(12.6, 7.8), dpi=250,
-                                 sharex=True)
-    draw(a0, "exact_dp", "Optimized", squeeze)
-    draw(a1, "uniform", "Uniform", squeeze)
-    a0.legend(fontsize=15, loc="lower right", framealpha=0.95)
-    a1.set_xlabel("Rank", fontsize=17)
+    ncol = len(ARGS.roots)
+    if ARGS.ymax is None:
+        peak = 0.0
+        for root in ARGS.roots:
+            for planner in ("exact_dp", "uniform"):
+                b, c = load(root, planner)
+                peak = max(peak, max(x + y for x, y in zip(b, c)))
+        ymax = (int(peak * 1.06) // 10 + 1) * 10
+    else:
+        ymax = ARGS.ymax
+    fig, axes = plt.subplots(2, ncol, figsize=(6.4 * ncol, 7.8), dpi=250,
+                             sharex=True, sharey=squeeze, squeeze=False)
+    for j, (root, name) in enumerate(zip(ARGS.roots, ARGS.titles)):
+        draw(axes[0][j], root, "exact_dp", f"{name} — Optimized",
+             squeeze, ymax)
+        draw(axes[1][j], root, "uniform", f"{name} — Uniform",
+             squeeze, ymax)
+        axes[1][j].set_xlabel("Rank", fontsize=17)
+        if j > 0:
+            axes[0][j].set_ylabel("")
+            axes[1][j].set_ylabel("")
+    axes[0][0].legend(fontsize=14, loc="lower right", framealpha=0.95)
     fig.tight_layout()
     fig.savefig(ARGS.out)
     print(f"[ok] {ARGS.out}")
