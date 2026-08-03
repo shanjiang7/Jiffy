@@ -8,7 +8,7 @@
 #   - fresh run root outputs/cr_strong_scaling_h18/ (old results preserved).
 # The 1-rank runs are the baselines: timing-only, no snapshots.
 #
-# Usage:  sbatch dev/run_cr_strong_scaling_sbatch.sh <bull|texas|continuous_hybrid|hilbert>
+# Usage:  sbatch dev/run_strong_scaling_sbatch.sh <bull|texas|continuous_hybrid|hilbert>
 
 #SBATCH -J cr_strong
 #SBATCH -N 8

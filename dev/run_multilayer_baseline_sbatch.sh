@@ -5,7 +5,7 @@
 # uniform baseline instead of burning a second multi-hour run (identical
 # physics; the copy is logged).
 #
-# Usage:  sbatch dev/run_cr_ml_baseline_sbatch.sh <bull|continuous_hybrid>
+# Usage:  sbatch dev/run_multilayer_baseline_sbatch.sh <bull|continuous_hybrid>
 
 #SBATCH -J cr_ml_base
 #SBATCH -N 1

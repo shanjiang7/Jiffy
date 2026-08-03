@@ -7,7 +7,7 @@
 #   tol1e4 -> Lseg 90 steps, eps 5 K;  tol1e7 -> Lseg 130 steps, eps 0.01 K.
 # Timing-only runs; efficiency = T(1)/T(P) per tolerance curve. Resumable.
 #
-# Usage:  sbatch dev/run_cr_weak_scaling_sbatch.sh <bull|continuous_hybrid>
+# Usage:  sbatch dev/run_weak_scaling_sbatch.sh <bull|continuous_hybrid>
 
 #SBATCH -J cr_weak
 #SBATCH -N 64

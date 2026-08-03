@@ -1,8 +1,8 @@
 #!/bin/bash
 # Dump the real exact_dp 64-rank partition for the 15-layer bull (planning
-# only, no solve; single GPU). Feeds dev/plot_ml15_parallel_hero.py.
+# only, no solve; single GPU). Feeds dev/plot_multilayer_hero.py.
 #
-# Usage:  sbatch dev/run_dump_ml15_plan_sbatch.sh [bull|continuous_hybrid]
+# Usage:  sbatch dev/run_partition_dump_sbatch.sh [bull|continuous_hybrid]
 
 #SBATCH -J ml15_plan
 #SBATCH -N 1
@@ -32,7 +32,7 @@ case "${PATH_NAME}" in
 esac
 
 srun -N 1 -n 1 --kill-on-bad-exit=1 \
-  python dev/dump_ml15_plan.py \
+  python dev/dump_partition_plan.py \
     --config configs/examples/sim_ex1.ini \
     --path-config "${ML_CFG}" \
     --dt-us 10 \

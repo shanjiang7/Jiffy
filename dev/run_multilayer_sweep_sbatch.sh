@@ -4,7 +4,7 @@
 # 25,170 SS -> exact_dp auto-delegates to the crossing-point search with
 # layer-clamped charged spans. Submit with --dependency=afterok:<baseline>.
 #
-# Usage:  sbatch --dependency=afterok:<baseline job> dev/run_cr_ml_sweep_sbatch.sh
+# Usage:  sbatch --dependency=afterok:<baseline job> dev/run_multilayer_sweep_sbatch.sh
 
 #SBATCH -J cr_ml_sweep
 #SBATCH -N 64

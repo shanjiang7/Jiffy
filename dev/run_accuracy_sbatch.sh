@@ -3,14 +3,14 @@
 # stride 10. One job per path; per tolerance target runs 8/16/32 ranks
 # (7/15/31 cuts) with the default planner logic (exact_dp, w = 0.21,
 # a0 = 7.9 SS) and compares rel-L2 against the stride-10 serial references
-# (dev/run_cr_serial_refs_s10_sbatch.sh — submit this job with
+# (dev/run_accuracy_serial_refs_sbatch.sh — submit this job with
 # --dependency=afterok:<that job>). Parallel snapshots are deleted after a
 # successful comparison. Resumable: completed comparisons are skipped.
 #
 # Rank placement on the 8-node allocation: 8r -> 1/GPU, 16r -> 2/GPU,
 # 32r -> 4/GPU (bind_local_gpu maps co-located ranks onto the shared device).
 #
-# Usage:  sbatch --dependency=afterok:<refjob> dev/run_cr_accuracy_cuts_s10_sbatch.sh <bull|hybrid>
+# Usage:  sbatch --dependency=afterok:<refjob> dev/run_accuracy_sbatch.sh <bull|hybrid>
 
 #SBATCH -J cr_acc_cuts
 #SBATCH -N 8
