@@ -1,33 +1,30 @@
-# dev/ — experimental and debugging material (not part of the artifact surface)
+# Camera-ready reproduction pipeline
 
-Nothing here is needed to reproduce the paper. Contents:
+Every experimental result in the paper maps to a runner (sbatch, submit
+from a Vista login node after `source env_vista.sh` in the repo root) and
+a plot/analysis script. All runners are resumable: completed cases are
+skipped, so re-submitting after a timeout continues where it stopped.
 
-- `serial_run.py` — executes the *planned* runtime components sequentially
-  (plan-emulation debug tool). NOT the ground-truth reference; that is
-  `src/hermes/scripts/segment_correction/serial_reference_run.py`.
-- `serial_emulated_run.py` + `emulated_runtime.py` — single-GPU emulation of an
-  N-rank run (debugging multi-rank behaviour on one device).
-- `dag_pipeline.py` — standalone DAG export CLI (superseded by
-  `plan_only.py --export-dag`).
-- `run_accuracy_cuts_*.sh` — error-vs-cuts study: 32 MPI ranks on 8 GPUs,
-  chord vs 10-step lookup sources (shows the tol1e4 guarantee is
-  rank-count-dependent; see the A_path discussion in the top-level README).
-- `run_accuracy_hybrid_fix_sbatch.sh` — 8-rank lookup-source ablation runner.
-- `run_selfcheck_{hybrid,bull}_sbatch.sh` — self-convergence ladder studies
-  (estimate-vs-truth tables at 31 cuts; see docs/error_analysis.md).
-- `run_mpi_diagnostic_*.sh` — gamma-diagnostic runs. **Superseded and no longer
-  runnable**: they pass `--diagnostic-check`/`--diagnostic-config`, which were
-  retired from `main.py`. That mode ran a second complete pass at level_K/gamma
-  and compared snapshots; `--self-check` obtains the same information
-  incrementally, without repeating any base solve. Kept for reference only
-  (`configs/dev/diagnostic_check.ini` holds their settings).
-- `run_mpi_sbatch_legacy.sh`, `run_mpi_fast_heat_uniform_8rank_sbatch.sh`,
-  `run_mpi_strong_scaling_*.sh` — superseded strong-scaling runners (16-64 rank
-  sweeps and env-var-driven variants). The paper's Sec. V-C experiment is
-  `scripts/scaling/run_strong_scaling_sbatch.sh`. Note the legacy runner
-  hard-coded a PROJECT_DIR pointing at a sibling repository.
-- `quick_start.sh` — legacy environment snippet (superseded by `env_vista.sh`).
+| Paper artifact | Runner(s) | Plot / analysis |
+|---|---|---|
+| Strong scaling, 1-8 ranks, four paths (fig) | `run_cr_strong_scaling_sbatch.sh <path>` | `plot_cr_strong_scaling.py` |
+| 15-layer strong scaling to 64 ranks (fig) | `run_cr_ml_baseline_sbatch.sh <path>` then `run_cr_ml_sweep_sbatch.sh <path>` | `plot_cr_strong_scaling.py` |
+| Per-rank busy-time breakdown (fig) | (uses the 15-layer runs; single-layer variant: `run_cr_strong_scaling64_sbatch.sh <path>`) | `plot_rank_breakdown.py` |
+| Weak scaling to 64 ranks, two targets (fig) | `run_cr_weak_scaling_sbatch.sh <path>` | `plot_cr_weak_scaling.py` |
+| Parametric study (fig) | `run_cr_strong_scaling_sbatch.sh continuous_hybrid_eps5` (+ the tight arm above) | `plot_cr_parametric.py` |
+| Accuracy tables: serial references | `run_cr_serial_refs_s10_sbatch.sh` | — |
+| Accuracy tables: 32-rank observed errors | `run_cr_accuracy_cuts_s10_sbatch.sh <path>` | (summary printed by the job) |
+| Accuracy tables: straight-line rows | `../scripts/accuracy/run_accuracy_straight_sbatch.sh` | — |
+| Accuracy tables: max DAG in-degree column | — (CPU-only, cached r_eps) | `dag_indegree_stats.py` |
+| Self-convergence table | `run_cr_selfcheck_step4_sbatch.sh` | (table printed by the job) |
+| Scan-path overview figure | — | `plot_scan_paths.py` (viz-only coarsened configs in `configs/dev/`) |
+| 64-rank partition dump (visualizations) | `run_dump_ml15_plan_sbatch.sh <path>` (or `dump_ml15_plan.py` on a GPU node) | — |
+| Multi-layer visualization (ParaView bundle) | — | `build_pv_bundle.py`, `make_pv_state.py`, `render_single_layer_pv.py`, `plot_ml15_parallel_hero.py` |
 
-Ablation configs live in `configs/dev/` (`*_aabb.ini` pins the published AABB
-pair test + single-pulse lookup; `*_lookup10.ini` uses a 10-step point-like
-lookup source).
+`camera_ready_experiments.md` documents the measurement protocol
+(same-allocation pairing, timing-only runs, environment sanitization).
+Speedup/efficiency tables are collected by `../scripts/scaling/collect_scaling.py`.
+
+Historical experiment drivers (cost-model gates, epsilon sweeps, the
+removed discontinuous-hybrid path, ablations) were deleted from the tree
+during the camera-ready cleanup; they remain available in git history.

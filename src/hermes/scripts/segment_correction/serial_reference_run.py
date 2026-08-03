@@ -42,7 +42,7 @@ def parse_args(argv=None):
     p.add_argument(
         "--boundary-visualization-json",
         help=(
-            "Metadata JSON produced by dev/serial_emulated_run.py "
+            "Metadata JSON from a legacy emulated run "
             "--boundary-correction-snapshot-mode. When provided, only the matching "
             "boundary window is saved."
         ),
