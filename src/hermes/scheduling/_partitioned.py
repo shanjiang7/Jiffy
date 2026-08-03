@@ -9,7 +9,6 @@ from hermes.pipelines.components import compute_dag_and_components, export_dag_r
 from hermes.pipelines.config import PipelineConfig
 from hermes.scheduling._group_partition import (
     partition_supersegments_exact_dp,
-    partition_supersegments_monotone_dp,
     direct_partition_dag_n1,
 )
 from hermes.scheduling._grouping import _compute_cut_depths
@@ -244,9 +243,10 @@ def _build_dag_stage(
 
 
 # DP planners share one call signature; "uniform" differs (no monotonicity check).
+# exact_dp delegates internally to the crossing-point search above the dense
+# limit (see _group_partition.py), so it is the only DP mode exposed.
 _DP_PARTITIONERS = {
     "exact_dp": partition_supersegments_exact_dp,
-    "dp_monotonicity": partition_supersegments_monotone_dp,
 }
 
 
@@ -294,7 +294,7 @@ def _build_partition_stage(
     else:
         raise ValueError(
             f"Unknown planner_mode '{planner_mode}', expected 'uniform', 'exact_dp', "
-            "or 'dp_monotonicity'."
+            "or 'uniform'."
         )
     partition_summary["partition_mode"] = mode
     partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)

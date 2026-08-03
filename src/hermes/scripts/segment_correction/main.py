@@ -84,7 +84,7 @@ def parse_args(argv=None):
     )
     p.add_argument(
         "--planner-mode",
-        choices=("uniform", "exact_dp", "dp_monotonicity"),
+        choices=("uniform", "exact_dp"),
         default="exact_dp",
         help="Partition planner mode (default: exact_dp).",
     )
