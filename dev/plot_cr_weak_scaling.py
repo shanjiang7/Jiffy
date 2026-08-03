@@ -46,11 +46,10 @@ def main() -> None:
             ax.plot([pos[r] for r in xs], ys, color=color, lw=2.4,
                     marker=marker, ms=8, label=label, zorder=3)
             for r, e in zip(xs, ys):
-                if r >= 8 and (len(xs) <= 5 or r in (8, 24, 40, 56)
-                               or r == max(xs)):
+                if r >= 8:
                     ax.annotate(f"{e:.2f}", (pos[r], e),
                                 textcoords="offset points", xytext=(0, 10),
-                                fontsize=14, color=color, ha="center")
+                                fontsize=17, color=color, ha="center")
         ax.axhline(1.0, ls="--", color="0.6", lw=1.6, zorder=2)
         ax.set_xticks(range(len(union)))
         ax.set_xticklabels([str(r) for r in union])

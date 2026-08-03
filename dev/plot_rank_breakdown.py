@@ -38,6 +38,8 @@ ap.add_argument("--squeeze", nargs=2, type=float, default=(0.0, 150.0),
                 help="y band to compress (start, end)")
 ap.add_argument("--ymax", type=float, default=None,
                 help="top of y axis (default: auto from data)")
+ap.add_argument("--vertical", action="store_true",
+                help="stack root groups vertically instead of side by side")
 ap.add_argument("--no-break", action="store_true",
                 help="plain linear y axis (large-variation cases)")
 ap.add_argument("--dp-dir", nargs="+", default=None,
@@ -133,6 +135,21 @@ def main() -> None:
         col_mode.append(not flat)
         col_ymax.append(ARGS.ymax if ARGS.ymax else
                         (int(peak * 1.06) // 10 + 1) * 10)
+    if ARGS.vertical:
+        fig, axes = plt.subplots(2 * ncol, 1, figsize=(12.6, 6.6 * ncol),
+                                 dpi=250, sharex=True, squeeze=False)
+        for j, (root, name) in enumerate(zip(ARGS.roots, ARGS.titles)):
+            pre = f"{name} — " if ncol > 1 else ""
+            draw(axes[2 * j][0], root, "exact_dp", f"{pre}Optimized",
+                 col_mode[j], col_ymax[j], j)
+            draw(axes[2 * j + 1][0], root, "uniform", f"{pre}Uniform",
+                 col_mode[j], col_ymax[j], j)
+        axes[-1][0].set_xlabel("Rank", fontsize=17)
+        axes[0][0].legend(fontsize=14, loc="lower right", framealpha=0.95)
+        fig.tight_layout()
+        fig.savefig(ARGS.out)
+        print(f"[ok] {ARGS.out}")
+        return
     width = 12.6 if ncol == 1 else 6.4 * ncol
     fig, axes = plt.subplots(2, ncol, figsize=(width, 7.8), dpi=250,
                              sharex=True, squeeze=False)

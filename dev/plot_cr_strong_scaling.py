@@ -38,10 +38,12 @@ def load(root: str, path: str) -> dict:
     return out
 
 
-def panel(ax, data, title, label_ranks, ideal_max, spread=1.0):
+def panel(ax, data, title, label_ranks, ideal_max, spread=1.0, label_fs=15,
+          label_dx=0.0):
     ranks = sorted(data["exact_dp"])
-    for mode, color, name, dy in (("uniform", UNI, "Uniform", -0.52 * spread),
-                                  ("exact_dp", OPT, "Optimized", 0.34 * spread)):
+    for mode, color, name, dy, dx in (
+            ("uniform", UNI, "Uniform", -0.52 * spread, label_dx),
+            ("exact_dp", OPT, "Optimized", 0.34 * spread, -label_dx)):
         xs = ranks
         ys = [data[mode][r][1] for r in xs]
         ax.plot(xs, ys, color=color, lw=2.4, marker="o", ms=7, zorder=3,
@@ -49,8 +51,8 @@ def panel(ax, data, title, label_ranks, ideal_max, spread=1.0):
         for r, s in zip(xs, ys):
             if r in label_ranks:
                 ax.annotate(f"{s:.2f}x", (r, s), textcoords="offset points",
-                            xytext=(2, 18 * dy), fontsize=15, color=color,
-                            ha="center", zorder=4)
+                            xytext=(2 + dx, 18 * dy), fontsize=label_fs,
+                            color=color, ha="center", zorder=4)
     ax.plot([1, ideal_max], [1, ideal_max], ls="--", color="0.6", lw=1.6,
             label="Ideal", zorder=2)
     base = data["exact_dp"][1][0]
@@ -83,7 +85,8 @@ def fig_ml15() -> None:
     for ax, (key, title) in zip(axes.flat, PATHS_ML):
         data = load("outputs/cr_strong_scaling_ml15", key)
         panel(ax, data, f"{title} (15 layers)",
-              label_ranks={16, 32, 64}, ideal_max=64, spread=2.2)
+              label_ranks={8, 16, 24, 32, 40, 48, 56, 64}, ideal_max=64,
+              spread=2.2, label_fs=17, label_dx=20.0)
         ax.set_xticks(sorted(data["exact_dp"]))
         ax.set_xlim(-1, 67)
         ax.set_ylim(0, 68)
