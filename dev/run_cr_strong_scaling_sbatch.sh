@@ -35,11 +35,17 @@ case "${PATH_NAME}" in
   bull)    PATH_CFG=configs/examples/fast_heat.ini ;;
   texas)   PATH_CFG=configs/examples/texas.ini ;;
   continuous_hybrid) PATH_CFG=configs/examples/continuous_hybrid.ini ;;
+  continuous_hybrid_eps5) PATH_CFG=configs/dev/continuous_hybrid_eps5.ini ;;  # parametric study, eps=5K arm
   hilbert) PATH_CFG=configs/examples/hilbert.ini ;;
-  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|continuous_hybrid|hilbert)" >&2; exit 1 ;;
+  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|continuous_hybrid|continuous_hybrid_eps5|hilbert)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
+if [ "${PATH_NAME}" = "continuous_hybrid_eps5" ]; then
+  # Parametric-study low-accuracy arm: CG tolerance matched to the 1e-4
+  # target (1e-5); everything else identical to sim_ex1.ini.
+  SIM_CONFIG=configs/dev/sim_ex1_cg1e5.ini
+fi
 DT_US=10
 CORRECTION_WEIGHT=0.21
 RANK_SWEEP=${RANK_SWEEP:-"1 2 3 4 5 6 7 8"}
