@@ -29,13 +29,12 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--roots", nargs="+",
-                default=["outputs/cr_strong_scaling_ml15/bull",
-                         "outputs/cr_strong_scaling_ml15/continuous_hybrid"])
-ap.add_argument("--titles", nargs="+", default=["Bull", "Spiral-Raster"])
+                default=["outputs/cr_strong_scaling_ml15/bull"])
+ap.add_argument("--titles", nargs="+", default=["Bull"])
 ap.add_argument("--run", default="parallel_64r")
 ap.add_argument("--out",
                 default="outputs/cr_strong_scaling_ml15/rank_breakdown_64r.png")
-ap.add_argument("--squeeze", nargs=2, type=float, default=(50.0, 170.0),
+ap.add_argument("--squeeze", nargs=2, type=float, default=(0.0, 150.0),
                 help="y band to compress (start, end)")
 ap.add_argument("--ymax", type=float, default=None,
                 help="top of y axis (default: auto from data)")
@@ -102,9 +101,9 @@ def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float):
         return
     ax.set_yscale("function", functions=(fwd, inv))
     ax.set_ylim(0, ymax)
-    lo_ticks = [0, SQ_LO]
-    hi_start = int(np.ceil(SQ_HI / 20.0)) * 20
-    ax.set_yticks(lo_ticks + list(range(hi_start, int(ymax) + 1, 20)))
+    lo_ticks = [0] if SQ_LO == 0 else [0, SQ_LO]
+    hi_start = int(np.ceil((SQ_HI + 20.0) / 10.0)) * 10
+    ax.set_yticks(lo_ticks + [SQ_HI] + list(range(hi_start, int(ymax) + 1, 20)))
     # Break marks on the y spine at the compressed band.
     d = 0.4
     kw = dict(marker=[(-1, -d), (1, d)], markersize=10, linestyle="none",
@@ -126,13 +125,13 @@ def main() -> None:
         ymax = (int(peak * 1.06) // 10 + 1) * 10
     else:
         ymax = ARGS.ymax
-    fig, axes = plt.subplots(2, ncol, figsize=(6.4 * ncol, 7.8), dpi=250,
+    width = 12.6 if ncol == 1 else 6.4 * ncol
+    fig, axes = plt.subplots(2, ncol, figsize=(width, 7.8), dpi=250,
                              sharex=True, sharey=squeeze, squeeze=False)
     for j, (root, name) in enumerate(zip(ARGS.roots, ARGS.titles)):
-        draw(axes[0][j], root, "exact_dp", f"{name} — Optimized",
-             squeeze, ymax)
-        draw(axes[1][j], root, "uniform", f"{name} — Uniform",
-             squeeze, ymax)
+        pre = f"{name} — " if ncol > 1 else ""
+        draw(axes[0][j], root, "exact_dp", f"{pre}Optimized", squeeze, ymax)
+        draw(axes[1][j], root, "uniform", f"{pre}Uniform", squeeze, ymax)
         axes[1][j].set_xlabel("Rank", fontsize=17)
         if j > 0:
             axes[0][j].set_ylabel("")
