@@ -209,15 +209,18 @@ def _segment_pair_min_dist_nd(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 @dataclass(frozen=True)
 class DependencyModel:
+    # Defaults mirror configs/examples/path_base.ini (the production
+    # settings every experiment inherits), so a code-only caller gets the
+    # published configuration.
     len_scale: float = 1.0
-    level_K: float = 5e-2
+    level_K: float = 0.01
     resolution_m: float = 20e-6
-    bc: str = "flux"
+    bc: str = "temp"
     spacing_m: float = 200e-6
-    window_x_um: int = 6000
-    window_y_um: int = 6000
-    window_z_um: int = 300
-    target_patch_step_stride: int = 10
+    window_x_um: int = 4800
+    window_y_um: int = 4800
+    window_z_um: int = 2400
+    target_patch_step_stride: int = 20
     # Pairwise proximity test used for edge retention:
     #   "aabb"   - source AABB vs square target patches, elapsed time from the
     #              source segment END (published/paper behaviour).
@@ -226,7 +229,7 @@ class DependencyModel:
     #              segment-to-segment distances; each source chord carries its
     #              own deposit time; the target ROI half-width is added to the
     #              retention radius instead of inflating geometry.
-    pair_test: str = "aabb"
+    pair_test: str = "chords"
     segment_samples: int = 5
 
 
