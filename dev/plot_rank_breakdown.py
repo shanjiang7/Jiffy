@@ -40,10 +40,10 @@ ap.add_argument("--ymax", type=float, default=None,
                 help="top of y axis (default: auto from data)")
 ap.add_argument("--no-break", action="store_true",
                 help="plain linear y axis (large-variation cases)")
-ap.add_argument("--dp-dir", default=None,
-                help="override subdir for the optimized run (flat layouts)")
-ap.add_argument("--uniform-dir", default=None,
-                help="override subdir for the uniform run (flat layouts)")
+ap.add_argument("--dp-dir", nargs="+", default=None,
+                help="per-root subdir override for the optimized run")
+ap.add_argument("--uniform-dir", nargs="+", default=None,
+                help="per-root subdir override for the uniform run")
 ARGS = ap.parse_args()
 
 BASE_C = "#9dc3e6"
@@ -67,9 +67,13 @@ def inv(z):
                              SQ_HI + (z - z1)))
 
 
-def load(root: str, planner: str):
-    override = ARGS.dp_dir if planner == "exact_dp" else ARGS.uniform_dir
-    sub = override if override else f"{planner}/{ARGS.run}"
+def load(root: str, planner: str, col: int = 0):
+    ovr = ARGS.dp_dir if planner == "exact_dp" else ARGS.uniform_dir
+    sub = None
+    if ovr is not None and col < len(ovr) and ovr[col] != "auto":
+        sub = ovr[col]
+    if sub is None:
+        sub = f"{planner}/{ARGS.run}"
     d = json.load(open(f"{root}/{sub}/timing_summary.json"))
     rows = d["rank_timing_breakdown"]
     rows = rows if isinstance(rows, list) else list(rows.values())
@@ -79,8 +83,9 @@ def load(root: str, planner: str):
     return base, corr
 
 
-def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float):
-    base, corr = load(root, planner)
+def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float,
+         col: int = 0):
+    base, corr = load(root, planner, col)
     ranks = range(len(base))
     tot = [b + c for b, c in zip(base, corr)]
     mx, mean = max(tot), sum(tot) / len(tot)
@@ -97,7 +102,7 @@ def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float):
     ax.set_title(f"{title} partitioning", fontsize=19, loc="left", pad=8)
     ax.set_ylabel("Busy time [s]", fontsize=17)
     if not squeeze:
-        ax.set_ylim(0, 1.18 * mx)
+        ax.set_ylim(0, ymax)
         return
     ax.set_yscale("function", functions=(fwd, inv))
     ax.set_ylim(0, ymax)
@@ -114,28 +119,30 @@ def draw(ax, root: str, planner: str, title: str, squeeze: bool, ymax: float):
 
 
 def main() -> None:
-    squeeze = not ARGS.no_break
     ncol = len(ARGS.roots)
-    if ARGS.ymax is None:
-        peak = 0.0
-        for root in ARGS.roots:
-            for planner in ("exact_dp", "uniform"):
-                b, c = load(root, planner)
-                peak = max(peak, max(x + y for x, y in zip(b, c)))
-        ymax = (int(peak * 1.06) // 10 + 1) * 10
-    else:
-        ymax = ARGS.ymax
+    # Per-column stats: min/max totals across both planners decide the mode
+    # (flat axis when variation is large) and the column's ymax.
+    col_mode, col_ymax = [], []
+    for j, root in enumerate(ARGS.roots):
+        peak, trough = 0.0, 1e30
+        for planner in ("exact_dp", "uniform"):
+            b, c = load(root, planner, j)
+            tot = [x + y for x, y in zip(b, c)]
+            peak, trough = max(peak, max(tot)), min(trough, min(tot))
+        flat = ARGS.no_break or (trough < 0.6 * peak) or peak <= SQ_HI * 1.1
+        col_mode.append(not flat)
+        col_ymax.append(ARGS.ymax if ARGS.ymax else
+                        (int(peak * 1.06) // 10 + 1) * 10)
     width = 12.6 if ncol == 1 else 6.4 * ncol
     fig, axes = plt.subplots(2, ncol, figsize=(width, 7.8), dpi=250,
-                             sharex=True, sharey=squeeze, squeeze=False)
+                             sharex=True, squeeze=False)
     for j, (root, name) in enumerate(zip(ARGS.roots, ARGS.titles)):
         pre = f"{name} — " if ncol > 1 else ""
-        draw(axes[0][j], root, "exact_dp", f"{pre}Optimized", squeeze, ymax)
-        draw(axes[1][j], root, "uniform", f"{pre}Uniform", squeeze, ymax)
+        draw(axes[0][j], root, "exact_dp", f"{pre}Optimized",
+             col_mode[j], col_ymax[j], j)
+        draw(axes[1][j], root, "uniform", f"{pre}Uniform",
+             col_mode[j], col_ymax[j], j)
         axes[1][j].set_xlabel("Rank", fontsize=17)
-        if j > 0:
-            axes[0][j].set_ylabel("")
-            axes[1][j].set_ylabel("")
     axes[0][0].legend(fontsize=14, loc="lower right", framealpha=0.95)
     fig.tight_layout()
     fig.savefig(ARGS.out)
