@@ -84,7 +84,7 @@ def fig_ml15() -> None:
         data = load("outputs/cr_strong_scaling_ml15", key)
         panel(ax, data, f"{title} (15 layers)",
               label_ranks={16, 32, 64}, ideal_max=64, spread=2.2)
-        ax.set_xticks([1, 8, 16, 32, 64])
+        ax.set_xticks(sorted(data["exact_dp"]))
         ax.set_xlim(-1, 67)
         ax.set_ylim(0, 68)
     fig.tight_layout()

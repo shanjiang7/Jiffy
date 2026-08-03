@@ -38,7 +38,7 @@ esac
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
 DT_US=10
 CORRECTION_WEIGHT=0.21
-RANK_SWEEP=${RANK_SWEEP:-"1 8 16 32 64"}
+RANK_SWEEP=${RANK_SWEEP:-"1 8 16 24 32 40 48 56 64"}
 TOLS=${TOLS:-"tol1e4 tol1e7"}
 RUN_ROOT=outputs/cr_weak_scaling_h18/${FAMILY}
 

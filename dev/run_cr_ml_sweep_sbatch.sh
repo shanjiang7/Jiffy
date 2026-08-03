@@ -33,7 +33,7 @@ case "${PATH_NAME}" in
   *) echo "ERROR: unknown path '${PATH_NAME}' (bull|continuous_hybrid)" >&2; exit 1 ;;
 esac
 RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}
-RANK_SWEEP=${RANK_SWEEP:-"8 16 32 64"}
+RANK_SWEEP=${RANK_SWEEP:-"8 16 24 32 40 48 56 64"}
 PLANNER_MODES=${PLANNER_MODES:-"exact_dp uniform"}
 
 for N in ${RANK_SWEEP}; do

@@ -35,20 +35,25 @@ def load(path: str, tol: str) -> dict[int, float]:
 def main() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.4), dpi=250)
     for ax, (key, title) in zip(axes, PATHS):
+        # Categorical x positions over the union of measured rank counts, so
+        # partially complete sweeps still plot correctly.
+        union = sorted({r for tol, *_ in TOLS for r in load(key, tol)})
+        pos = {r: i for i, r in enumerate(union)}
         for tol, label, color, marker in TOLS:
             eff = load(key, tol)
             xs = sorted(eff)
             ys = [eff[r] for r in xs]
-            ax.plot(range(len(xs)), ys, color=color, lw=2.4, marker=marker,
-                    ms=8, label=label, zorder=3)
-            for i, (r, e) in enumerate(zip(xs, ys)):
-                if r >= 8:
-                    ax.annotate(f"{e:.2f}", (i, e),
+            ax.plot([pos[r] for r in xs], ys, color=color, lw=2.4,
+                    marker=marker, ms=8, label=label, zorder=3)
+            for r, e in zip(xs, ys):
+                if r >= 8 and (len(xs) <= 5 or r in (8, 24, 40, 56)
+                               or r == max(xs)):
+                    ax.annotate(f"{e:.2f}", (pos[r], e),
                                 textcoords="offset points", xytext=(0, 10),
                                 fontsize=14, color=color, ha="center")
         ax.axhline(1.0, ls="--", color="0.6", lw=1.6, zorder=2)
-        ax.set_xticks(range(5))
-        ax.set_xticklabels(["1", "8", "16", "32", "64"])
+        ax.set_xticks(range(len(union)))
+        ax.set_xticklabels([str(r) for r in union])
         ax.set_ylim(0.5, 1.1)
         ax.set_title(f"Scan Path: {title}", fontsize=20, pad=10)
         ax.set_xlabel("Ranks", fontsize=18)
