@@ -17,11 +17,14 @@ from matplotlib.collections import LineCollection
 
 from hermes.laser_path.path_loader import build_path_sections_nd_from_ini
 
+# Bull/Texas use 4x-coarsened scan-line spacing and Hilbert order 5 (viz-only
+# variants) so the path structure is visible at figure scale; the
+# spiral-raster unit is shown at true geometry.
 PANELS = [
-    ("configs/examples/fast_heat.ini", "Bull"),
-    ("configs/examples/texas.ini", "Texas"),
+    ("configs/dev/bull_viz.ini", "Bull"),
+    ("configs/dev/texas_viz.ini", "Texas"),
     ("configs/dev/continuous_hybrid_unit.ini", "Spiral-Raster"),
-    ("configs/examples/hilbert.ini", "Hilbert"),
+    ("configs/dev/hilbert_viz.ini", "Hilbert"),
 ]
 CMAP = plt.get_cmap("viridis")
 
@@ -34,7 +37,7 @@ def main() -> None:
                          if on]) * 1e3
         segs = np.stack([pts[:-1], pts[1:]], axis=1)
         frac = np.linspace(0.0, 1.0, len(segs))
-        lc = LineCollection(segs, colors=CMAP(frac), linewidths=0.7)
+        lc = LineCollection(segs, colors=CMAP(frac), linewidths=1.0)
         ax.add_collection(lc)
         ax.set_xlim(pts[:, 0].min() - 1, pts[:, 0].max() + 1)
         ax.set_ylim(pts[:, 1].min() - 1, pts[:, 1].max() + 1)
