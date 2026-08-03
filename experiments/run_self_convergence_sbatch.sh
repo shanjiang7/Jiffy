@@ -2,7 +2,8 @@
 # Self-convergence ladder at the +4 SS/iteration horizon step (explicit override;
 # 6 iterations = +24 SS total, the protocol of the published
 # tab:self_convergence table. Bull + continuous-hybrid, tol1e4, 32 ranks,
-# stride-20 snapshots vs the stride-10 serial references.
+# stride-10 snapshots vs the stride-10 serial references (matches
+# the accuracy-table sampling, so u0 equals the Table IV entry).
 # Prints the paper-style table (tab:self_convergence format):
 #   iterate | true max rel-L2 | ||d_k||   + the cumulative-estimate check.
 #
@@ -29,10 +30,10 @@ source "${PROJECT_DIR}/env_vista.sh"
 unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 SIM_CONFIG=configs/examples/sim_calibration.ini
-SNAP_EVERY=20
+SNAP_EVERY=10
 ITERS=6
 WEIGHT=0.21
-TAG=par32_ladder_step4_w021
+TAG=par32_ladder_step4_s10_w021
 
 run_ladder () {
   local PATHKEY=$1
