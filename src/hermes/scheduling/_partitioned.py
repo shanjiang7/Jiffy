@@ -8,7 +8,9 @@ from hermes.DAG.dependency import LookupRuntime
 from hermes.pipelines.components import compute_dag_and_components, export_dag_results
 from hermes.pipelines.config import PipelineConfig
 from hermes.scheduling._group_partition import (
-    partition_supersegments_exact_dp,
+    _EXACT_DP_DENSE_LIMIT,
+    partition_supersegments_dp,
+    partition_supersegments_fast_dp,
     direct_partition_dag_n1,
 )
 from hermes.scheduling._grouping import _compute_cut_depths
@@ -242,12 +244,7 @@ def _build_dag_stage(
     )
 
 
-# DP planners share one call signature; "uniform" differs (no monotonicity check).
-# exact_dp delegates internally to the crossing-point search above the dense
-# limit (see _group_partition.py), so it is the only DP mode exposed.
-_DP_PARTITIONERS = {
-    "exact_dp": partition_supersegments_exact_dp,
-}
+
 
 
 def _uniform_rank_ranges(partition_summary: dict, world_size: int) -> dict[int, tuple[int, int] | None]:
@@ -280,8 +277,15 @@ def _build_partition_stage(
             cut_depths=dag_stage.cut_depths,
             ss_per_layer=int(dag_stage.dag_result.ss_per_layer),
         )
-    elif mode in _DP_PARTITIONERS:
-        partition_summary = _DP_PARTITIONERS[mode](
+    elif mode == "exact_dp":
+        # Exact minimax partition: dense DP up to the dense limit, the
+        # crossing-point fast DP above it (identical results).
+        backend = (
+            partition_supersegments_fast_dp
+            if int(dag_stage.n_ss) > _EXACT_DP_DENSE_LIMIT
+            else partition_supersegments_dp
+        )
+        partition_summary = backend(
             int(dag_stage.n_ss),
             edge_pairs=dag_stage.edge_pairs,
             num_processors=int(world_size),
@@ -293,8 +297,7 @@ def _build_partition_stage(
         )
     else:
         raise ValueError(
-            f"Unknown planner_mode '{planner_mode}', expected 'uniform', 'exact_dp', "
-            "or 'uniform'."
+            f"Unknown planner_mode '{planner_mode}', expected 'uniform' or 'exact_dp'."
         )
     partition_summary["partition_mode"] = mode
     partition_summary["partition_seconds"] = float(time.perf_counter() - partition_t0)

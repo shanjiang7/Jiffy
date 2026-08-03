@@ -3,6 +3,10 @@ from __future__ import annotations
 # Above this problem size, exact_dp delegates to the crossing-point search
 # (identical results, no O(n^2) table). 1-layer paths (~1.7k SS) stay on the
 # dense path; multi-layer problems (~27k SS) use the scalable one.
+# The public planner mode "exact_dp" (see _partitioned.py) uses the dense
+# O(n^2) DP up to this many supersegments and the crossing-point fast DP
+# above it; the two produce identical partitions (equivalence
+# property-tested over 3000 randomized DAG/P cases, 2026-07-29).
 _EXACT_DP_DENSE_LIMIT = 4096
 
 from ._grouping import (
@@ -383,44 +387,6 @@ def _summarize_cut_monotonicity(
     }
 
 
-def partition_supersegments_exact_dp(
-    n_ss: int,
-    edge_pairs: list[tuple[int, int]],
-    *,
-    num_processors: int,
-    segments_per_supersegment: int = 1,
-    correction_weight: float = 0.25,
-    cut_depths: list[int] | None = None,
-    verify_monotonicity: bool = False,
-    ss_per_layer: int | None = None,
-) -> dict:
-    """Exact minimax partitioner: dispatches between the two DP backends.
-
-    - `partition_supersegments_dp`: dense O(n^2) cost table, used up to
-      _EXACT_DP_DENSE_LIMIT supersegments.
-    - `partition_supersegments_fast_dp`: crossing-point binary search,
-      O(P n log n) time / O(P n) memory, used above the limit (the dense
-      table is infeasible for multi-layer problems).
-    The two produce identical partitions (equivalence property-tested over
-    3000 randomized DAG/P cases, 2026-07-29).
-    """
-    backend = (
-        partition_supersegments_fast_dp
-        if int(n_ss) > _EXACT_DP_DENSE_LIMIT
-        else partition_supersegments_dp
-    )
-    return backend(
-        int(n_ss),
-        edge_pairs,
-        num_processors=int(num_processors),
-        segments_per_supersegment=int(segments_per_supersegment),
-        correction_weight=float(correction_weight),
-        cut_depths=cut_depths,
-        verify_monotonicity=bool(verify_monotonicity),
-        ss_per_layer=ss_per_layer,
-    )
-
-
 def partition_supersegments_dp(
     n_ss: int,
     edge_pairs: list[tuple[int, int]],
@@ -732,7 +698,6 @@ def direct_partition_dag_n1(
 
 
 __all__ = [
-    "partition_supersegments_exact_dp",
     "partition_supersegments_dp",
     "partition_supersegments_fast_dp",
     "direct_partition_dag_n1",
