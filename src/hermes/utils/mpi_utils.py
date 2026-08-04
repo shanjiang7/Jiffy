@@ -28,10 +28,3 @@ def bind_local_gpu() -> None:
     num_dev = int(cp.cuda.runtime.getDeviceCount())
     if num_dev > 0:
         cp.cuda.Device(local_rank % num_dev).use()
-
-
-def owned_segments(rank: int, world_size: int, num_segments: int) -> List[int]:
-    return [s for s in range(num_segments) if s % world_size == rank]
-
-
-__all__ = ["mpi_context", "bind_local_gpu", "owned_segments"]

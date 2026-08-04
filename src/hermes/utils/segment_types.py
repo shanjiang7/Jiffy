@@ -39,7 +39,7 @@ class Segment:
 
     __slots__ = (
         "id", "steps", "power_W", "V_mps", "t_start_s", "width_m",
-        "_duration_s", "_path_bounds_nd", "_aabb_nd",
+        "_duration_s", "_path_bounds_nd",
     )
 
     def __init__(
@@ -65,7 +65,6 @@ class Segment:
         # Cache expensive computations once at construction
         self._duration_s: float = float(sum(float(s.dt_m) for s in steps)) / V
         self._path_bounds_nd: tuple[float, float, float, float] = self._compute_path_bounds()
-        self._aabb_nd: tuple[float, float, float, float] = self._compute_aabb_nd()
 
     # ── cached properties ─────────────────────────────────────────────────────
 
@@ -77,11 +76,6 @@ class Segment:
     def path_bounds_nd(self) -> tuple[float, float, float, float]:
         """Line-based bounding box: (x_min, x_max, y_min, y_max) in nd units."""
         return self._path_bounds_nd
-
-    @property
-    def aabb_nd(self) -> tuple[float, float, float, float]:
-        """ROI-based AABB: (x_min, x_max, y_min, y_max) in nd units."""
-        return self._aabb_nd
 
     # ── other properties ──────────────────────────────────────────────────────
 
@@ -124,34 +118,6 @@ class Segment:
         xs = [float(s.x_nd) for s in self.steps]
         ys = [float(s.y_nd) for s in self.steps]
         return (min(xs), max(xs), min(ys), max(ys))
-
-    def _compute_aabb_nd(self) -> tuple[float, float, float, float]:
-        if len(self.steps) < 2:
-            return self._path_bounds_nd
-
-        width_m = self.width_m
-        x_all, y_all = [], []
-
-        for i in range(len(self.steps) - 1):
-            s0, s1 = self.steps[i], self.steps[i + 1]
-            dt_m = float(s0.dt_m)
-            if dt_m <= 0.0:
-                continue
-            phi = float(s0.phi_rad)
-            cx = (float(s0.x_nd) + float(s1.x_nd)) * 0.5
-            cy = (float(s0.y_nd) + float(s1.y_nd)) * 0.5
-            hl, hw = dt_m * 0.5, width_m * 0.5
-            c, s = math.cos(phi), math.sin(phi)
-            lx, ly = hl * c, hl * s   # half-length vector
-            wx, wy = -hw * s, hw * c  # half-width vector (perpendicular)
-            # 4 corners of the oriented rectangle
-            for sl, sw in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
-                x_all.append(cx + sl * lx + sw * wx)
-                y_all.append(cy + sl * ly + sw * wy)
-
-        if not x_all:
-            return self._path_bounds_nd
-        return (min(x_all), max(x_all), min(y_all), max(y_all))
 
 
 # ── SuperSegment ──────────────────────────────────────────────────────────────
@@ -204,11 +170,6 @@ class SuperSegment:
     @property
     def power_W(self) -> float:
         return self.segments[0].power_W
-
-    @property
-    def aabb_nd(self) -> tuple[float, float, float, float]:
-        xmins, xmaxs, ymins, ymaxs = zip(*(seg.aabb_nd for seg in self.segments))
-        return (min(xmins), max(xmaxs), min(ymins), max(ymaxs))
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────

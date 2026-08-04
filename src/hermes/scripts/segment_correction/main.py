@@ -25,7 +25,6 @@ from hermes.scripts.outer_solver import build_outer_context
 from hermes.scripts.segment_correction.core import run_parallel_tracer
 from hermes.scripts.segment_correction.output import (
     build_global_stride_snapshot_steps,
-    comp_start_step,
     save_parallel_snapshots,
 )
 
@@ -257,7 +256,6 @@ def _run_parallel_pass(
     )
 
     assigned_comps = rank_assignments.get(rank, [])
-    start_step_map = comp_start_step(all_path_defs, steps_per_ss)
     path_def_by_id = {int(pd.component_id): pd for pd in all_path_defs}
 
     if rank == 0:
@@ -303,7 +301,6 @@ def _run_parallel_pass(
                 final_states_host=states,
                 path_defs=all_path_defs,
                 path_def_by_id=path_def_by_id,
-                start_step_map=start_step_map,
                 ss_per_layer=ss_per_layer,
                 steps_per_ss=steps_per_ss,
                 ctx=ctx,
@@ -329,7 +326,6 @@ def _run_parallel_pass(
         correction_horizon_by_edge=correction_horizon_by_edge,
         component_predecessors=component_predecessors,
         component_successors=component_successors,
-        deltaT_K=float(phys.deltaT),
         collect_output_snapshots=not bool(args.timing_only),
         h_m=float(rc.level3.h_tuple[0]),
         self_check_maps=self_check_maps,
@@ -359,7 +355,6 @@ def _run_parallel_pass(
             final_states_host=final_states_host,
             path_defs=all_path_defs,
             path_def_by_id=path_def_by_id,
-            start_step_map=start_step_map,
             ss_per_layer=ss_per_layer,
             steps_per_ss=steps_per_ss,
             ctx=ctx,

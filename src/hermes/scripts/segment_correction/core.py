@@ -296,24 +296,6 @@ def _superpose_correction_lists(
     return final_snaps
 
 
-def _delta_max_abs_series(
-    delta_snaps: List[np.ndarray],
-    rel_snapshot_steps: list[int] | None,
-) -> list[tuple[int, float]]:
-    if not delta_snaps:
-        return []
-    if rel_snapshot_steps is None:
-        rel_snapshot_steps = list(range(len(delta_snaps)))
-    series: list[tuple[int, float]] = []
-    for snap_idx, delta_snap in enumerate(delta_snaps):
-        if snap_idx >= len(rel_snapshot_steps):
-            break
-        step = int(rel_snapshot_steps[snap_idx])
-        max_abs = float(np.max(np.abs(delta_snap.astype(np.float64, copy=False))))
-        series.append((step, max_abs))
-    return series
-
-
 def _chunk_snapshots_by_bytes(
     snaps: List[np.ndarray],
     *,
@@ -423,7 +405,6 @@ def run_parallel_tracer(
     correction_horizon_by_edge: Dict[tuple[int, int], int] | None = None,
     component_predecessors: Dict[int, List[int]] | None = None,
     component_successors: Dict[int, List[int]] | None = None,
-    deltaT_K: float = 1.0,
     collect_output_snapshots: bool = True,
     h_m: float | None = None,
     self_check_maps: dict | None = None,

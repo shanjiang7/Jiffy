@@ -13,7 +13,6 @@ from hermes.DAG.dependency import DependencyModel
 @dataclass(frozen=True)
 class DependencyConfig:
     model: DependencyModel
-    lookup_dt_s: float | None
     mock_numerical_source_steps: int
     # Number of source-on deposit steps for the numerical r_eps lookup.
     # 1 reproduces the published single-pulse mock source; a value equal to
@@ -143,11 +142,6 @@ class PipelineConfig:
         if mock_numerical_source_steps < 1:
             raise ValueError("[dependency].mock_numerical_source_steps must be >= 1.")
         
-        lookup_dt_s = None
-        if cfg.has_option("dependency", "lookup_dt"):
-            raw_lookup_dt = str(cfg.get("dependency", "lookup_dt")).strip()
-            if raw_lookup_dt:
-                lookup_dt_s = float(parse_length_expr(raw_lookup_dt))
 
         steps_per_segment = int(cfg.get("run", "steps_per_segment", fallback="200"))
         raw_lookup_src = str(
@@ -179,7 +173,6 @@ class PipelineConfig:
             segments_per_supersegment=int(cfg.get("run", "segments_per_supersegment", fallback="8")),
             dependency=DependencyConfig(
                 model=model,
-                lookup_dt_s=lookup_dt_s,
                 mock_numerical_source_steps=mock_numerical_source_steps,
                 lookup_source_on_steps=lookup_source_on_steps,
             ),

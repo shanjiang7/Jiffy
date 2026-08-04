@@ -8,15 +8,6 @@ import numpy as np
 from hermes.utils.snapshot_utils import crop_snapshot
 
 
-def comp_start_step(path_defs, steps_per_ss: int) -> dict:
-    mapping = {}
-    acc = 0
-    for pd in path_defs:
-        mapping[pd.component_id] = acc
-        acc += int(getattr(pd, "total_steps", int(pd.weight) * int(steps_per_ss)))
-    return mapping
-
-
 def _component_layer_offsets(path_defs, *, ss_per_layer: int, steps_per_ss: int) -> tuple[dict[int, int], dict[int, int], dict[int, int]]:
     if int(ss_per_layer) < 1:
         raise ValueError("ss_per_layer must be >= 1")
@@ -93,7 +84,6 @@ def save_parallel_snapshots(
     final_states_host,
     path_defs,
     path_def_by_id,
-    start_step_map,
     ss_per_layer: int,
     steps_per_ss: int,
     ctx,
@@ -111,7 +101,6 @@ def save_parallel_snapshots(
 
     for comp_id, snaps in final_states_host.items():
         pd = path_def_by_id[int(comp_id)]
-        start_step = start_step_map[comp_id]
         layer_idx = int(layer_idx_by_comp[int(comp_id)])
         layer_start_step = int(layer_start_step_by_comp[int(comp_id)])
         steps_in_layer = int(layer_total_steps[int(layer_idx)])
@@ -125,7 +114,6 @@ def save_parallel_snapshots(
             if k >= len(rel_snapshot_steps):
                 break
             rel_step = int(rel_snapshot_steps[k])
-            global_step = start_step + rel_step
             within_layer_step = layer_start_step + rel_step
             if within_layer_step >= steps_in_layer:
                 break

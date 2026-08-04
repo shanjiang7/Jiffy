@@ -34,12 +34,6 @@ def canonicalize_leg(dx_step: float, dy_step: float) -> tuple[float, float]:
     return dx, dy
 
 
-def is_fast_path_leg(dx_step: float, dy_step: float) -> bool:
-    dx = float(dx_step)
-    dy = float(dy_step)
-    return (dx != 0.0 and dy == 0.0) or (dx == 0.0 and dy != 0.0)
-
-
 def reset_cache_origin(
     cache: dict[str, object],
     x_arr: cp.ndarray,
@@ -272,7 +266,6 @@ def apply_domain_movement(
 __all__ = [
     "apply_domain_movement",
     "canonicalize_leg",
-    "is_fast_path_leg",
     "prepare_movement_cache",
     "reset_cache_origin",
     "speed_key",

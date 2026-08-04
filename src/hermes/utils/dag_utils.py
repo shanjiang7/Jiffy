@@ -110,19 +110,6 @@ def write_edges_csv(edges: Iterable[Edge], out_csv: str | Path, *, header: str) 
     return out_path
 
 
-def load_edges_csv(csv_path: Path) -> tuple[list[tuple[int, int]], int]:
-    """Read dag_edges.csv → (edge list, max node id seen)."""
-    edges = []
-    max_node = -1
-    with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            src, dst = int(row["src_ss_id"]), int(row["dst_ss_id"])
-            edges.append((src, dst))
-            max_node = max(max_node, src, dst)
-    return edges, max_node
-
-
 def write_components_csv(components: list[Component], out_path: Path) -> Path:
     """Write component table to CSV."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,61 +119,3 @@ def write_components_csv(components: list[Component], out_path: Path) -> Path:
         for c in components:
             writer.writerow([c.id, c.start_ss, c.end_ss, c.size, c.depth, c.kind])
     return out_path
-
-
-def write_dependency_lists(edges: Iterable[Edge], n_nodes: int, out_prefix: Path) -> tuple[Path, Path]:
-    n = int(n_nodes)
-    in_deps: list[list[int]] = [[] for _ in range(n)]
-    out_deps: list[list[int]] = [[] for _ in range(n)]
-    for e in edges:
-        u, v = int(e.src), int(e.dst)
-        if 0 <= u < n and 0 <= v < n:
-            out_deps[u].append(v)
-            in_deps[v].append(u)
-
-    def _fmt(xs: list[int]) -> str:
-        return ";".join(str(x) for x in sorted(set(xs))) if xs else ""
-
-    out_prefix = Path(out_prefix)
-    out_prefix.parent.mkdir(parents=True, exist_ok=True)
-    in_path = out_prefix.parent / f"{out_prefix.name}_in.csv"
-    out_path_csv = out_prefix.parent / f"{out_prefix.name}_out.csv"
-
-    with in_path.open("w") as f:
-        f.write("dst_ss_id,in_deps\n")
-        for v in range(n):
-            f.write(f"{v},{_fmt(in_deps[v])}\n")
-    with out_path_csv.open("w") as f:
-        f.write("src_ss_id,out_deps\n")
-        for u in range(n):
-            f.write(f"{u},{_fmt(out_deps[u])}\n")
-
-    return in_path, out_path_csv
-
-
-def write_intervals_csv(
-    intervals: list[tuple[int, int]],
-    out_path: Path,
-    *,
-    header: tuple[str, str] = ("start_node", "end_node"),
-) -> Path:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([header[0], header[1]])
-        for start, end in intervals:
-            writer.writerow([int(start), int(end)])
-    return out_path
-
-
-__all__ = [
-    "Edge",
-    "Component",
-    "find_components",
-    "split_components_at_layer_boundaries",
-    "write_edges_csv",
-    "load_edges_csv",
-    "write_components_csv",
-    "write_dependency_lists",
-    "write_intervals_csv",
-]

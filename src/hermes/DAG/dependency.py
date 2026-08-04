@@ -6,7 +6,6 @@ Public API
 AABB, DependencyModel, REpsLookup, LookupRuntime
 build_r_eps_lookup, build_r_eps_lookup_numerical
 write_r_eps_lookup_csv
-aabb_distance_nd, aabb_distance_m
 build_supersegment_dependency_edges
 build_adjacency
 """
@@ -87,53 +86,6 @@ def calibration_rel_l2_for_epsilon(epsilon_K: float) -> dict:
 
 
 # ── AABB geometry ─────────────────────────────────────────────────────────────
-
-def aabb_distance_nd(a: AABB, b: AABB) -> float:
-    """Minimum Euclidean distance between two 2-D AABBs. Returns 0 if they overlap."""
-    ax0, ax1, ay0, ay1 = sorted([float(a[0]), float(a[1])]) + sorted([float(a[2]), float(a[3])])
-    bx0, bx1, by0, by1 = sorted([float(b[0]), float(b[1])]) + sorted([float(b[2]), float(b[3])])
-    dx = max(0.0, bx0 - ax1, ax0 - bx1)
-    dy = max(0.0, by0 - ay1, ay0 - by1)
-    return float((dx * dx + dy * dy) ** 0.5)
-
-
-def aabb_distance_m(a_nd: AABB, b_nd: AABB, *, len_scale: float) -> float:
-    """AABB distance in meters (nd coords scaled by len_scale)."""
-    s = float(len_scale)
-    return aabb_distance_nd(
-        tuple(float(v) * s for v in a_nd),
-        tuple(float(v) * s for v in b_nd),
-    )
-
-
-def _segment_target_patch_samples_nd(
-    seg: Segment,
-    *,
-    len_scale: float,
-    step_stride: int,
-) -> tuple[tuple[float, AABB], ...]:
-    """Sample square target patches every step_stride steps along seg."""
-    if not seg.steps:
-        return ((0.0, seg.path_bounds_nd),)
-    s = float(len_scale)
-    if s <= 0.0:
-        raise ValueError(f"len_scale must be > 0; got {s!r}")
-    stride = max(1, int(step_stride))
-    inv_v = 1.0 / float(seg.V_mps)
-    half_w_nd = 0.5 * max(0.0, float(seg.width_m)) / s
-
-    samples: list[tuple[float, AABB]] = []
-    elapsed_s = 0.0
-    last_idx = len(seg.steps) - 1
-    for step_idx, step in enumerate(seg.steps):
-        if step_idx % stride == 0 or step_idx == last_idx:
-            x0 = float(step.x_nd)
-            y0 = float(step.y_nd)
-            patch = (x0 - half_w_nd, x0 + half_w_nd, y0 - half_w_nd, y0 + half_w_nd)
-            samples.append((elapsed_s, patch))
-        elapsed_s += float(step.dt_m) * inv_v
-    return tuple(samples)
-
 
 def _segment_chords_nd(
     seg: Segment,
@@ -622,71 +574,18 @@ def build_supersegment_dependency_edges(
     if n == 0:
         return []
     back_window = max(1, int(back_window))
-    pair_test = str(getattr(model, "pair_test", "aabb")).strip().lower()
-    builder = {"chords": _build_edges_chords, "aabb": _build_edges_aabb}.get(pair_test)
-    if builder is None:
-        raise ValueError(f"Unknown pair_test {pair_test!r}; expected 'aabb' or 'chords'.")
-    return builder(
+    pair_test = str(getattr(model, "pair_test", "chords")).strip().lower()
+    if pair_test != "chords":
+        raise ValueError(
+            f"Unknown pair_test {pair_test!r}; only 'chords' is supported "
+            "(the published-era 'aabb' test was removed; see git history)."
+        )
+    return _build_edges_chords(
         seg_list,
         model=model,
         lookup=lookup,
         back_window=back_window,
     )
-
-
-def _build_edges_aabb(
-    seg_list: List[tuple[int, Segment]],
-    *,
-    model: DependencyModel,
-    lookup: REpsLookup,
-    back_window: int,
-) -> List[Edge]:
-    """
-    Published pair test: source AABB vs moving square target patches, elapsed
-    time measured from the source segment END.
-    """
-    n = len(seg_list)
-    source_bounds_nd = [seg.path_bounds_nd for _, seg in seg_list]
-    source_end_s = [float(seg.t_start_s + seg.duration_s) for _, seg in seg_list]
-    target_samples_nd = [
-        _segment_target_patch_samples_nd(
-            seg,
-            len_scale=float(model.len_scale),
-            step_stride=int(model.target_patch_step_stride),
-        )
-        for _, seg in seg_list
-    ]
-    edges_set: set[tuple[int, int]] = set()
-
-    for j in range(n):
-        ss_j_id, seg_j = seg_list[j]
-        if seg_j.power_W == 0.0:
-            continue
-        target_samples_j = target_samples_nd[j]
-        for i in range(max(0, j - back_window), j):
-            ss_i_id, seg_i = seg_list[i]
-            if ss_i_id == ss_j_id:
-                continue  # intra-SS pair – no inter-SS edge needed
-            if seg_i.power_W == 0.0:
-                continue
-            # Source side uses the centerline path bounds only; target side uses a
-            # moving square ROI patch sampled along seg_j so width_roi_m matches
-            # the S3-start patch logic while still covering the full target path.
-            src_bounds_i = source_bounds_nd[i]
-            seg_i_end_s = source_end_s[i]
-            for local_elapsed_s, target_patch_nd in target_samples_j:
-                elapsed_s = max(0.0, seg_j.t_start_s + local_elapsed_s - seg_i_end_s)
-                dt_idx = max(0, min(int(elapsed_s / lookup.dt_s), len(lookup.r_eps_m) - 1))
-                d_m = aabb_distance_m(
-                    target_patch_nd,
-                    src_bounds_i,
-                    len_scale=float(model.len_scale),
-                )
-                if d_m <= float(lookup.at(dt_idx)):
-                    edges_set.add((ss_i_id, ss_j_id))
-                    break
-
-    return [Edge(src=s, dst=d) for s, d in sorted(edges_set)]
 
 
 def _build_edges_chords(
@@ -870,7 +769,6 @@ __all__ = [
     "DependencyModel", "REpsLookup", "LookupRuntime",
     "build_r_eps_lookup", "build_r_eps_lookup_numerical",
     "write_r_eps_lookup_csv",
-    "aabb_distance_nd", "aabb_distance_m",
     "calibration_rel_l2_for_epsilon",
     "build_supersegment_dependency_edges",
     "compute_edge_indegree_summary",

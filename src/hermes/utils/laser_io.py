@@ -5,8 +5,6 @@ Functions
 ---------
 load_cfg              – load a ConfigParser from an INI file
 load_segment_config   – read [run] section into SegmentConfig
-write_segments_csv    – write Segment list to flat CSV
-write_supersegments_csv – write SuperSegment mapping to CSV
 """
 from __future__ import annotations
 
@@ -114,29 +112,3 @@ def load_segment_config(cfg) -> SegmentConfig:
         t0_s=float(cfg.get("run", "segment_t0_s", fallback="0.0")),
         width_m=float(parse_length_expr(cfg.get("run", "width_m", fallback="0.001"))),
     )
-
-
-def write_segments_csv(segments: list[Segment], out_csv: str | Path) -> Path:
-    out_path = Path(out_csv).expanduser().resolve()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    rows_out = [
-        [float(seg.id), float(local_idx), float(s.x_nd), float(s.y_nd), float(s.dt_m), float(s.phi_rad)]
-        for seg in segments
-        for local_idx, s in enumerate(seg.steps)
-    ]
-    np.savetxt(out_path, np.asarray(rows_out, dtype=float), delimiter=",",
-               header="segment_id,local_idx,x_nd,y_nd,dt_m,phi_rad", comments="")
-    return out_path
-
-
-def write_supersegments_csv(supersegs: list[SuperSegment], out_csv: str | Path) -> Path:
-    out_path = Path(out_csv).expanduser().resolve()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    rows_out = [
-        [int(ss.id), int(k), int(seg.id)]
-        for ss in supersegs
-        for k, seg in enumerate(ss.segments)
-    ]
-    np.savetxt(out_path, np.asarray(rows_out, dtype=int), delimiter=",",
-               header="supersegment_id,seg_idx_in_super,segment_id", comments="", fmt="%d")
-    return out_path
