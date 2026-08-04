@@ -85,7 +85,11 @@ def _load_cfg_recursive(path: Path, visited: set[Path]) -> configparser.ConfigPa
     visited = set(visited)
     visited.add(path)
     if not path.is_file():
-        return cfg
+        raise FileNotFoundError(
+            f"Config file not found: {path} (referenced directly or via an "
+            "[include] chain). A missing include would otherwise silently "
+            "fall back to built-in defaults that differ from path_base.ini."
+        )
 
     raw_cfg = _new_cfg()
     # Some INI comments contain non-ASCII symbols (e.g., Delta).

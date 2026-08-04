@@ -80,7 +80,18 @@ def load_sim_setup(
 
 
 def select_float_type(rc):
-    """cupy dtype from [run].float_type (imported lazily: GPU-free callers stay GPU-free)."""
+    """cupy dtype from [run].float_type (imported lazily: GPU-free callers stay GPU-free).
+
+    Only float64 is supported: every production CUDA kernel is compiled
+    with double-precision buffers, and cupy RawKernel does not validate
+    dtypes, so a float32 run would silently corrupt device memory.
+    """
     import cupy as cp
 
-    return cp.float64 if rc.float_type_str.lower() == "float64" else cp.float32
+    if rc.float_type_str.lower() != "float64":
+        raise ValueError(
+            f"float_type='{rc.float_type_str}' is not supported: the fused "
+            "solver kernels are double-precision only. Set [simulation] "
+            "float_type = float64 (or omit the key)."
+        )
+    return cp.float64

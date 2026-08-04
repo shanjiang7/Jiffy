@@ -63,7 +63,7 @@ run_case () {
   fi
 
   echo "====== [$(date)] ${PATHKEY}/${TOL}: ${RANKS} ranks ($((RANKS-1)) cuts), stride ${SNAP_EVERY} ======"
-  srun -N "${NODES}" -n "${RANKS}" --ntasks-per-node="${PER_NODE}" \
+  srun --kill-on-bad-exit=1 -N "${NODES}" -n "${RANKS}" --ntasks-per-node="${PER_NODE}" \
     python src/hermes/scripts/segment_correction/main.py \
       --config "${SIM_CONFIG}" --path-config "${CFG}" \
       --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
@@ -72,7 +72,7 @@ run_case () {
       --out-dir "${ROOT}/${TAG}"
 
   echo "------ [$(date)] ${PATHKEY}/${TOL}/${RANKS}r: rel-L2 comparison ------"
-  srun -N 1 -n 1 --ntasks-per-node=1 python src/hermes/scripts/segment_correction/compare_runs.py \
+  srun --kill-on-bad-exit=1 -N 1 -n 1 --ntasks-per-node=1 python src/hermes/scripts/segment_correction/compare_runs.py \
     --par-snap-dir "${ROOT}/${TAG}/snapshots_par" \
     --ser-snap-dir "${ROOT}/serial_s10/snapshots_ser" \
     --out-dir "${ROOT}/compare_${TAG}" \

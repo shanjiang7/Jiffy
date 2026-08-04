@@ -45,7 +45,7 @@ run_ref () {
     return
   fi
   echo "====== [$(date)] ${PATHKEY}/${TOL}: serial reference, stride ${SNAP_EVERY} ======"
-  srun -N 1 -n 1 --exact python src/hermes/scripts/segment_correction/serial_reference_run.py \
+  srun --kill-on-bad-exit=1 -N 1 -n 1 --exact python src/hermes/scripts/segment_correction/serial_reference_run.py \
     --config "${SIM_CONFIG}" --path-config "${CFG}" \
     --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
     --out-dir "${ROOT}/serial_s10" \

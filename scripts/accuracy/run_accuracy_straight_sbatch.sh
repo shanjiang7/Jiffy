@@ -44,7 +44,7 @@ for TOL in tol1e4 tol1e7; do
 
   if [ ! -d "${ROOT}/serial/snapshots_ser" ]; then
     echo "====== [$(date)] straight/${TOL}: serial reference (single GPU) ======"
-    srun -N 1 -n 1 python src/hermes/scripts/segment_correction/serial_reference_run.py \
+    srun --kill-on-bad-exit=1 -N 1 -n 1 python src/hermes/scripts/segment_correction/serial_reference_run.py \
       --config "${SIM_CONFIG}" --path-config "${CFG}" \
       --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
       --out-dir "${ROOT}/serial"
@@ -53,14 +53,14 @@ for TOL in tol1e4 tol1e7; do
   fi
 
   echo "====== [$(date)] straight/${TOL}: parallel 8 ranks ======"
-  srun -N 8 -n 8 python src/hermes/scripts/segment_correction/main.py \
+  srun --kill-on-bad-exit=1 -N 8 -n 8 python src/hermes/scripts/segment_correction/main.py \
     --config "${SIM_CONFIG}" --path-config "${CFG}" \
     --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
     --planner-mode "${PLANNER_MODE}" --no-export-dag \
     --out-dir "${ROOT}/par8"
 
   echo "------ [$(date)] straight/${TOL}: rel-L2 comparison (source-on only) ------"
-  srun -N 1 -n 1 python src/hermes/scripts/segment_correction/compare_runs.py \
+  srun --kill-on-bad-exit=1 -N 1 -n 1 python src/hermes/scripts/segment_correction/compare_runs.py \
     --par-snap-dir "${ROOT}/par8/snapshots_par" \
     --ser-snap-dir "${ROOT}/serial/snapshots_ser" \
     --out-dir "${ROOT}/compare" \

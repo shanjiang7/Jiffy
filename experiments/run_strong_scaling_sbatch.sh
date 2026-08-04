@@ -71,7 +71,7 @@ for MODE in ${PLANNER_MODES}; do
     mkdir -p "${OUT_DIR}"
     echo ""
     echo "------ [$(date)] ${PATH_NAME}: ${MODE}, ${N} rank(s) ------"
-    srun -N "${N}" -n "${N}" --ntasks-per-node=1 \
+    srun --kill-on-bad-exit=1 -N "${N}" -n "${N}" --ntasks-per-node=1 \
       python src/hermes/scripts/segment_correction/main.py \
         --config "${SIM_CONFIG}" --path-config "${PATH_CFG}" \
         --dt-us "${DT_US}" \

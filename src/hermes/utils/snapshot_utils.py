@@ -28,7 +28,7 @@ def crop_snapshot(
     arr   : flat 1-D array of length nx*ny*nz (Fortran order, host numpy)
     nx, ny, nz : grid cell counts
     h_m   : uniform physical cell spacing in metres
-    roi_xy_m : side length of the square x-y ROI in metres (default 2 mm)
+    roi_xy_m : side length of the square x-y ROI in metres (default 1 mm)
     roi_z_m  : retained z extent near the top surface in metres (default 1 mm)
 
     Returns

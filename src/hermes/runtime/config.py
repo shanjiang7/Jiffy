@@ -205,7 +205,7 @@ def load_config(path: str | Path) -> RunConfig:
 
     # simulation (optional)
     sim = cfg["simulation"] if "simulation" in cfg else {}
-    float_type_str = sim.get("float_type", "float32").strip()
+    float_type_str = sim.get("float_type", "float64").strip()
     tag = sim.get("tag", "run").strip()
 
     # laser (t_spot_on optional)

@@ -734,10 +734,10 @@ def build_picture_nd(
 
         zigzag = create_path_columns(x_new_nd, y_new_nd, boundary_path, dx_nd=dx_nd, dy_nd=dy_nd)
     else:
-        # Legacy n-based approach
-        if n is None:
-            n = 100
-        zigzag = _create_path_legacy(x_new_nd, y_new_nd, boundary_path, n=n)
+        raise ValueError(
+            "[path.picture] requires column_res_x/column_res_y (or "
+            "column_res): the legacy n-based path generator was removed."
+        )
 
     W = np.array(zigzag, dtype=float)
     if anchor_to_first and W.shape[0] >= 1:

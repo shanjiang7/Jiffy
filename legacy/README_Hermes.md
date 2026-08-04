@@ -1,3 +1,14 @@
+> **LEGACY DOCUMENTATION.** This file documents the original standalone
+> multi-level HERMES solver, which now lives at `legacy/multi_level_solver.py`
+> and is kept for provenance only (its CPU kernels were removed from the live
+> package; see `legacy/README.md`). The post-processing workflow described
+> below (`surface_export.py`) reads the legacy snapshot format, which the
+> production JIFFY pipeline does not write. For the current solver, entry
+> points, and reproduction pipeline see the top-level `README.md` and
+> `experiments/README.md`; live post-processing tools are
+> `src/hermes/post/global_view.py` and
+> `src/hermes/post/surface_export_segment_correction.py`.
+
 # HERMES: GPU-Accelerated Multi-Level Heat Solver for Metal Additive Manufacturing
 
 HERMES is a **GPU-accelerated, three-level multi-resolution transient heat solver** for **Laser Powder Bed Fusion (LPBF)** additive manufacturing.  
@@ -240,7 +251,7 @@ The simulation was run on TACC Vista (Grace Hopper GPU) using:
 
 ```bash
 # Run solver
-python3 src/hermes/scripts/multi_level_solver.py \
+python3 legacy/multi_level_solver.py \
   --config configs/sim_ex1.ini \
   --laser_path configs/path_laser_ex1.ini
 

@@ -373,7 +373,7 @@ def _run_parallel_pass(
         if args.timing_only:
             print("[snapshots] skipped (--timing-only)")
         else:
-            print(f"[snapshots] saved to {snaps_dir}  (global every {snap_every_steps} steps, 2 mm ROI)")
+            print(f"[snapshots] saved to {snaps_dir}  (global every {snap_every_steps} steps, 1 mm ROI)")
         print(f"[timing] {pass_name} total: {par_dt:.3f} s  ({num_layers} layer(s))")
         print("[timing] rank breakdown:")
         rank_timing_summary = {}
@@ -449,6 +449,24 @@ def _run_parallel_pass(
 
 def main(argv=None):
     comm, rank, world_size = mpi_context()
+    try:
+        _main_impl(comm, rank, world_size, argv)
+    except SystemExit:
+        raise
+    except BaseException:
+        # An unhandled exception on one rank (e.g. a bad config during the
+        # rank-0 planning phase) must not leave the other ranks blocked in a
+        # collective until walltime.
+        import traceback
+
+        traceback.print_exc()
+        sys.stderr.flush()
+        if world_size > 1:
+            comm.Abort(1)
+        raise
+
+
+def _main_impl(comm, rank, world_size, argv=None):
     bind_local_gpu()
 
     args = parse_args(argv)
