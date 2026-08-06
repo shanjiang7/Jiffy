@@ -11,14 +11,13 @@ skipped, so re-submitting after a timeout continues where it stopped.
 | 15-layer strong scaling to 64 ranks (fig) | `scaling/run_multilayer_baseline_sbatch.sh <path>` then `scaling/run_multilayer_sweep_sbatch.sh <path>` | `scaling/plot_strong_scaling.py` |
 | Per-rank busy-time breakdown (fig) | (uses the 15-layer runs) | `scaling/plot_rank_breakdown.py` |
 | Weak scaling to 64 ranks, two targets (fig) | `scaling/run_weak_scaling_sbatch.sh <path>` | `scaling/plot_weak_scaling.py` |
-| Parametric study (fig) | `scaling/run_strong_scaling_sbatch.sh spiral_raster_eps5` (+ the tight arm above) | `scaling/plot_parametric_study.py` |
+| Parametric study (fig) | `scaling/run_strong_scaling_sbatch.sh spiral_raster_eps5` (the eps=0.01 K arm reuses the `spiral_raster` strong-scaling runs) | `scaling/plot_parametric_study.py` |
 | Accuracy tables: serial references | `accuracy/run_accuracy_serial_refs_sbatch.sh` | — |
 | Accuracy tables: 32-rank observed errors | `accuracy/run_accuracy_sbatch.sh <path>` | (summary printed by the job) |
 | Accuracy tables: straight-line rows | `accuracy/run_accuracy_straight_sbatch.sh` | — |
 | Accuracy tables: max DAG in-degree column | — (CPU-only, cached r_eps) | `accuracy/dag_indegree_stats.py` |
 | Self-convergence table | `accuracy/run_self_convergence_sbatch.sh` | (table printed by the job) |
 | Scan-path overview figure | — | `visualization/plot_scan_paths.py` (viz-only coarsening applied in-script) |
-| Multi-layer visualization (ParaView bundle) | — | `visualization/` (`build_pv_bundle.py`, `make_pv_state.py`, `render_single_layer_pv.py`, `plot_multilayer_hero.py`) |
 
 Measurement protocol, applied by every runner:
 
@@ -32,7 +31,3 @@ Measurement protocol, applied by every runner:
   `planning_summary.json` records the cost-model constants per run.
 
 Speedup/efficiency tables are collected by `scaling/collect_scaling.py`.
-
-Historical experiment drivers (cost-model gates, epsilon sweeps, the
-removed discontinuous-hybrid path, ablations) were deleted from the tree
-during the camera-ready cleanup; they remain available in git history.
