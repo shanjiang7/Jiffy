@@ -8,7 +8,7 @@
 #   - fresh run root outputs/cr_strong_scaling_h18/ (old results preserved).
 # The 1-rank runs are the baselines: timing-only, no snapshots.
 #
-# Usage:  sbatch experiments/run_strong_scaling_sbatch.sh <bull|texas|continuous_hybrid|hilbert>
+# Usage:  sbatch experiments/run_strong_scaling_sbatch.sh <bull|texas|spiral_raster|hilbert>
 
 #SBATCH -J cr_strong
 #SBATCH -N 8
@@ -32,16 +32,16 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 PATH_NAME=${1:-bull}
 case "${PATH_NAME}" in
-  bull)    PATH_CFG=configs/examples/fast_heat.ini ;;
+  bull)    PATH_CFG=configs/examples/bull.ini ;;
   texas)   PATH_CFG=configs/examples/texas.ini ;;
-  continuous_hybrid) PATH_CFG=configs/examples/continuous_hybrid.ini ;;
-  continuous_hybrid_eps5) PATH_CFG=configs/experiments/continuous_hybrid_eps5.ini ;;  # parametric study, eps=5K arm
+  spiral_raster) PATH_CFG=configs/examples/spiral_raster.ini ;;
+  spiral_raster_eps5) PATH_CFG=configs/experiments/spiral_raster_eps5.ini ;;  # parametric study, eps=5K arm
   hilbert) PATH_CFG=configs/examples/hilbert.ini ;;
-  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|continuous_hybrid|continuous_hybrid_eps5|hilbert)" >&2; exit 1 ;;
+  *) echo "ERROR: unknown path '${PATH_NAME}' (bull|texas|spiral_raster|spiral_raster_eps5|hilbert)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
-if [ "${PATH_NAME}" = "continuous_hybrid_eps5" ]; then
+if [ "${PATH_NAME}" = "spiral_raster_eps5" ]; then
   # Parametric-study low-accuracy arm: CG tolerance matched to the 1e-4
   # target (1e-5); everything else identical to sim_ex1.ini.
   SIM_CONFIG=configs/experiments/sim_ex1_cg1e5.ini

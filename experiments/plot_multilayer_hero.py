@@ -39,7 +39,7 @@ PAR64_S = 226.4       # measured 64-rank exact_dp wall clock (55.5x)
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="configs/examples/fast_heat.ini")
+    ap.add_argument("--config", default="configs/examples/bull.ini")
     ap.add_argument("--ranks", type=int, default=64)
     ap.add_argument("--layers", type=int, default=15)
     ap.add_argument("--downsample", type=int, default=3)

@@ -30,7 +30,6 @@ experiments/         the paper's reproduction pipeline: one runner + one plot
 scripts/             shared utilities (scaling aggregation, straight-line accuracy job)
 src/hermes/          single-GPU moving laser solver, DAG builder, partitioner, multi-rank runtime, post-processing
 legacy/              the original standalone multi-level HERMES solver (provenance only)
-docs/                error-analysis derivation notes
 ```
 
 ## 2. Installing the artifact
@@ -88,10 +87,10 @@ python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 ```
 
 **Strong scaling** (one rank per GPU; one job per scan path; the
-`continuous_hybrid_eps5` case is the parametric study's low-accuracy arm):
+`spiral_raster_eps5` case is the parametric study's low-accuracy arm):
 
 ```bash
-sbatch experiments/run_strong_scaling_sbatch.sh bull     # also: texas, continuous_hybrid, hilbert, continuous_hybrid_eps5
+sbatch experiments/run_strong_scaling_sbatch.sh bull     # also: texas, spiral_raster, hilbert, spiral_raster_eps5
 python experiments/plot_strong_scaling.py
 ```
 
@@ -99,13 +98,13 @@ python experiments/plot_strong_scaling.py
 
 ```bash
 B=$(sbatch --parsable experiments/run_multilayer_baseline_sbatch.sh bull | tail -1)
-sbatch --dependency=afterok:$B experiments/run_multilayer_sweep_sbatch.sh bull   # also: continuous_hybrid
+sbatch --dependency=afterok:$B experiments/run_multilayer_sweep_sbatch.sh bull   # also: spiral_raster
 ```
 
 **Weak scaling** (problem grows with the rank count, two accuracy targets):
 
 ```bash
-sbatch experiments/run_weak_scaling_sbatch.sh continuous_hybrid     # also: bull
+sbatch experiments/run_weak_scaling_sbatch.sh spiral_raster     # also: bull
 python experiments/plot_weak_scaling.py
 ```
 
@@ -115,7 +114,7 @@ is CPU-only):
 
 ```bash
 R=$(sbatch --parsable experiments/run_accuracy_serial_refs_sbatch.sh | tail -1)
-sbatch --dependency=afterok:$R experiments/run_accuracy_sbatch.sh bull   # also: continuous_hybrid, texas, hilbert
+sbatch --dependency=afterok:$R experiments/run_accuracy_sbatch.sh bull   # also: spiral_raster
 sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
 python experiments/dag_indegree_stats.py
 ```

@@ -8,7 +8,7 @@ solid, source-off connectors dashed.
 
 Usage:
     python src/hermes/laser_path/preview_path.py \
-        --config configs/examples/continuous_hybrid.ini
+        --config configs/examples/spiral_raster.ini
 """
 from __future__ import annotations
 

@@ -3,11 +3,11 @@
 # at TWO accuracy targets. P in {1, 8, 16, 32, 64}, exact_dp only (settled
 # 2026-07-29), w = 0.21 + a0 = 7.9 SS defaults. Problem growth: bull extent
 # x sqrt(P), spiral-raster motif x P. Per (P, tol) the calibrated (Lseg, eps)
-# pair from Table I is baked into configs/weak_scaling/cr/:
+# pair from Table I is baked into configs/weak_scaling/:
 #   tol1e4 -> Lseg 90 steps, eps 5 K;  tol1e7 -> Lseg 130 steps, eps 0.01 K.
 # Timing-only runs; efficiency = T(1)/T(P) per tolerance curve. Resumable.
 #
-# Usage:  sbatch experiments/run_weak_scaling_sbatch.sh <bull|continuous_hybrid>
+# Usage:  sbatch experiments/run_weak_scaling_sbatch.sh <bull|spiral_raster>
 
 #SBATCH -J cr_weak
 #SBATCH -N 64
@@ -31,8 +31,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 
 FAMILY=${1:-bull}
 case "${FAMILY}" in
-  bull|continuous_hybrid) ;;
-  *) echo "ERROR: unknown family '${FAMILY}' (bull|continuous_hybrid)" >&2; exit 1 ;;
+  bull|spiral_raster) ;;
+  *) echo "ERROR: unknown family '${FAMILY}' (bull|spiral_raster)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_ex1.ini      # h = 18 um
@@ -52,7 +52,7 @@ echo "======================================================"
 
 for TOL in ${TOLS}; do
   for P in ${RANK_SWEEP}; do
-    PATH_CFG="configs/weak_scaling/cr/${FAMILY}_p${P}_${TOL}.ini"
+    PATH_CFG="configs/weak_scaling/${FAMILY}_p${P}_${TOL}.ini"
     if [ ! -f "${PATH_CFG}" ]; then
       echo "ERROR: missing ${PATH_CFG}" >&2; exit 1
     fi

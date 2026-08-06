@@ -2,8 +2,8 @@
 """
 Parametric-study figure: spiral-raster strong scaling 1-8 ranks under the
 two calibrated configurations, CG tolerance matched to the error target:
-  left : 1e-4 target (eps=5K,    CG 1e-5)  outputs/.../continuous_hybrid_eps5
-  right: 1e-7 target (eps=0.01K, CG 1e-10) outputs/.../continuous_hybrid
+  left : 1e-4 target (eps=5K,    CG 1e-5)  outputs/.../spiral_raster_eps5
+  right: 1e-7 target (eps=0.01K, CG 1e-10) outputs/.../spiral_raster
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import matplotlib.pyplot as plt
 UNI = "#f0a202"
 OPT = "#2e75b6"
 ROOT = Path("outputs/cr_strong_scaling_h18")
-PANELS = [("continuous_hybrid_eps5", "Spiral-Raster, Accuracy: 1e-4"),
-          ("continuous_hybrid", "Spiral-Raster, Accuracy: 1e-7")]
+PANELS = [("spiral_raster_eps5", "Spiral-Raster, Accuracy: 1e-4"),
+          ("spiral_raster", "Spiral-Raster, Accuracy: 1e-7")]
 
 
 def load(path: str) -> dict:

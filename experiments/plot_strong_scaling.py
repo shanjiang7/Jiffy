@@ -25,8 +25,8 @@ import matplotlib.pyplot as plt
 UNI = "#f0a202"
 OPT = "#2e75b6"
 PATHS_8R = [("bull", "Bull"), ("texas", "Texas"),
-            ("continuous_hybrid", "Spiral-Raster"), ("hilbert", "Hilbert")]
-PATHS_ML = [("bull", "Bull"), ("continuous_hybrid", "Spiral-Raster")]
+            ("spiral_raster", "Spiral-Raster"), ("hilbert", "Hilbert")]
+PATHS_ML = [("bull", "Bull"), ("spiral_raster", "Spiral-Raster")]
 
 
 def load(root: str, path: str) -> dict:

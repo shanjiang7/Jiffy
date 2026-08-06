@@ -30,8 +30,8 @@ DEFAULT = [
     "configs/accuracy/straight_line_tol1e7.ini",
     "configs/accuracy/bull_tol1e4.ini",
     "configs/accuracy/bull_tol1e7.ini",
-    "configs/accuracy/continuous_hybrid_tol1e4.ini",
-    "configs/accuracy/continuous_hybrid_tol1e7.ini",
+    "configs/accuracy/spiral_raster_tol1e4.ini",
+    "configs/accuracy/spiral_raster_tol1e7.ini",
 ]
 
 

@@ -8,6 +8,9 @@ path.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -17,21 +20,38 @@ from matplotlib.collections import LineCollection
 
 from hermes.laser_path.path_loader import build_path_sections_nd_from_ini
 
-# Bull/Texas use 4x-coarsened scan-line spacing and Hilbert order 5 (viz-only
-# variants) so the path structure is visible at figure scale; the
-# spiral-raster unit is shown at true geometry.
+# Visualization-only overrides on the production configs, applied via
+# generated [include] stubs: Bull/Texas use 2.5x-coarsened scan-line spacing
+# (500um) and Hilbert order 5 (instead of 7) so the path structure is visible
+# at figure scale; the spiral-raster panel shows one unit (repeats = 1) at
+# true geometry. None of these variants is used for any measurement.
+REPO = Path(__file__).resolve().parents[1]
 PANELS = [
-    ("configs/experiments/bull_viz.ini", "Bull"),
-    ("configs/experiments/texas_viz.ini", "Texas"),
-    ("configs/experiments/continuous_hybrid_unit.ini", "Spiral-Raster"),
-    ("configs/experiments/hilbert_viz.ini", "Hilbert"),
+    ("bull.ini", "Bull",
+     f"[path.picture]\nimage = {REPO}/configs/images/longhorn.jpg\n"
+     "column_res_x = 500um\ncolumn_res_y = 500um\n"),
+    ("texas.ini", "Texas",
+     f"[path.picture]\nimage = {REPO}/configs/images/texas.jpg\n"
+     "column_res_x = 500um\ncolumn_res_y = 500um\n"),
+    ("spiral_raster.ini", "Spiral-Raster", "[path.spiral_raster]\nrepeats = 1\n"),
+    ("hilbert.ini", "Hilbert", "[path.hilbert]\norder = 5\n"),
 ]
 CMAP = plt.get_cmap("viridis")
 
 
+def viz_config(tmpdir: str, base_name: str, overrides: str) -> str:
+    stub = Path(tmpdir) / f"viz_{base_name}"
+    stub.write_text(
+        f"[include]\nbase = {REPO}/configs/examples/{base_name}\n\n{overrides}"
+    )
+    return str(stub)
+
+
 def main() -> None:
     fig, axes = plt.subplots(2, 2, figsize=(11.0, 9.8), dpi=250)
-    for ax, (cfg, title) in zip(axes.flat, PANELS):
+    tmpdir = tempfile.mkdtemp(prefix="scan_path_viz_")
+    for ax, (base, title, overrides) in zip(axes.flat, PANELS):
+        cfg = viz_config(tmpdir, base, overrides)
         pts = np.vstack([a for a, on in
                          build_path_sections_nd_from_ini(cfg, len_scale=1.0)
                          if on]) * 1e3

@@ -10,7 +10,7 @@
 # Rank placement on the 8-node allocation: 8r -> 1/GPU, 16r -> 2/GPU,
 # 32r -> 4/GPU (bind_local_gpu maps co-located ranks onto the shared device).
 #
-# Usage:  sbatch --dependency=afterok:<refjob> experiments/run_accuracy_sbatch.sh <bull|hybrid>
+# Usage:  sbatch --dependency=afterok:<refjob> experiments/run_accuracy_sbatch.sh <bull|spiral_raster>
 
 #SBATCH -J cr_acc_cuts
 #SBATCH -N 8
@@ -35,10 +35,8 @@ unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE
 PATHKEY=${1:-bull}
 case "${PATHKEY}" in
   bull)              CFG_PREFIX=configs/accuracy/bull ;;
-  continuous_hybrid) CFG_PREFIX=configs/accuracy/continuous_hybrid ;;
-  texas)             CFG_PREFIX=configs/accuracy/texas ;;
-  hilbert)           CFG_PREFIX=configs/accuracy/hilbert ;;
-  *) echo "ERROR: unknown path '${PATHKEY}' (bull|continuous_hybrid|texas|hilbert)" >&2; exit 1 ;;
+  spiral_raster) CFG_PREFIX=configs/accuracy/spiral_raster ;;
+  *) echo "ERROR: unknown path '${PATHKEY}' (bull|spiral_raster)" >&2; exit 1 ;;
 esac
 
 SIM_CONFIG=configs/examples/sim_calibration.ini

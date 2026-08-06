@@ -13,7 +13,7 @@ from .path_builders import (
     build_hilbert_nd,
     build_waypoints_nd,
     build_picture_nd,
-    build_continuous_hybrid_sections_nd,
+    build_spiral_raster_sections_nd,
     concatenate_sections_nd,
 )
 from hermes.config.units import parse_length_expr
@@ -249,10 +249,10 @@ def build_path_sections_nd_from_ini(
             True,
         )]
 
-    # 9) continuous hybrid: interleaved double square spiral + raster,
+    # 9) spiral-raster: interleaved double square spiral + raster,
     #     one uninterrupted laser-on stroke (no travel moves, no connectors)
-    if "path.continuous_hybrid" in cfg:
-        sec = cfg["path.continuous_hybrid"]
+    if "path.spiral_raster" in cfg:
+        sec = cfg["path.spiral_raster"]
         x0 = parse_length_expr(sec.get("x0", "0"))
         y0 = parse_length_expr(sec.get("y0", "0"))
         spiral_side_m = parse_length_expr(sec["spiral_side"])
@@ -262,7 +262,7 @@ def build_path_sections_nd_from_ini(
         gap_m = parse_length_expr(sec.get("gap", "0"))
         tile_gap_m = parse_length_expr(sec.get("tile_gap", "0"))
         repeats = int(sec.get("repeats", "1"))
-        return build_continuous_hybrid_sections_nd(
+        return build_spiral_raster_sections_nd(
             origin_m=(x0, y0),
             spiral_side_m=spiral_side_m,
             track_pitch_m=track_pitch_m,
@@ -290,7 +290,7 @@ def build_waypoints_nd_from_ini(path_ini: str | Path, len_scale: float, step_nd:
     - [path.island_raster]: Grid of raster-filled islands with source-off travel between islands
     - [path.hilbert]: Continuous Hilbert space-filling curve
     - [path.picture]: Image-based path with column scanning
-    - [path.continuous_hybrid]: Interleaved double square spiral + raster, one laser-on stroke
+    - [path.spiral_raster]: Interleaved double square spiral + raster, one laser-on stroke
     """
     sections = build_path_sections_nd_from_ini(path_ini, len_scale=len_scale, step_nd=step_nd)
     return concatenate_sections_nd(sections)

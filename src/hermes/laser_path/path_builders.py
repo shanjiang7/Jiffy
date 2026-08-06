@@ -441,7 +441,7 @@ def build_double_square_spiral_nd(
     return np.vstack([thread_a, thread_b])
 
 
-def build_continuous_hybrid_sections_nd(
+def build_spiral_raster_sections_nd(
     *,
     origin_m: tuple[float, float],
     spiral_side_m: float,

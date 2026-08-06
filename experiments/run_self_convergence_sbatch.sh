@@ -41,7 +41,7 @@ run_ladder () {
   local CFG
   case "${PATHKEY}" in
     bull)              CFG=configs/accuracy/bull_tol1e4.ini ;;
-    continuous_hybrid) CFG=configs/accuracy/continuous_hybrid_tol1e4.ini ;;
+    spiral_raster) CFG=configs/accuracy/spiral_raster_tol1e4.ini ;;
   esac
   if [ ! -d "${ROOT}/serial_s10/snapshots_ser" ]; then
     echo "ERROR: stride-10 serial reference ${ROOT}/serial_s10 missing" >&2
@@ -80,7 +80,7 @@ run_ladder () {
 }
 
 run_ladder bull
-run_ladder continuous_hybrid
+run_ladder spiral_raster
 
 echo ""
 echo "===== [$(date)] paper-style tables (step +4 SS/iter, 32 ranks, tol1e4) ====="
@@ -92,11 +92,11 @@ log_text = pathlib.Path(sys.argv[1]).read_text()
 tag, iters = sys.argv[2], int(sys.argv[3])
 
 sections = {}
-for path in ("bull", "continuous_hybrid"):
+for path in ("bull", "spiral_raster"):
     m = re.search(rf"{path}/tol1e4: 32 ranks.*?(?======= \[|\Z)", log_text, re.S)
     sections[path] = m.group(0) if m else ""
 
-for path in ("bull", "continuous_hybrid"):
+for path in ("bull", "spiral_raster"):
     shifts = dict(
         (int(k), float(v))
         for k, v in re.findall(r"\[self-check\] iter (\d+): shift max=([0-9.eE+-]+)", sections[path])

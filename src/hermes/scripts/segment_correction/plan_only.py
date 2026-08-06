@@ -6,7 +6,7 @@ solving. Usage (from the repo root, after `source env_vista.sh`):
 
 python src/hermes/scripts/segment_correction/plan_only.py \
   --config configs/examples/sim_ex1.ini \
-  --path-config configs/examples/fast_heat.ini \
+  --path-config configs/examples/bull.ini \
   --dt-us 10 --world-size 4 --planner-mode exact_dp
 """
 
@@ -51,10 +51,9 @@ def parse_args(argv=None):
         help=(
             "Boundary-correction weight used in the predicted workload model: the cost "
             "of a segment of source-off correction stepping relative to a segment "
-            "of source-on base stepping. Default 0.25 is the measured ratio on the "
-            "h = 18 um production grid (dev/bench_source_on_off.py: 0.232; 0.368 at "
-            "h = 30 um, 0.625 at h = 40 um -- source-off is dominated by fixed "
-            "per-step overhead, so the ratio falls as the grid refines)."
+            "of source-on base stepping. The default is the calibrated value for the "
+            "h = 18 um production grid (see DEFAULT_CORRECTION_WEIGHT in "
+            "scheduling/_grouping.py)."
         ),
     )
     p.add_argument(

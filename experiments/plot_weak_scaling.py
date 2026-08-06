@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT = Path("outputs/cr_weak_scaling_h18")
-PATHS = [("bull", "Bull"), ("continuous_hybrid", "Spiral-Raster")]
+PATHS = [("bull", "Bull"), ("spiral_raster", "Spiral-Raster")]
 TOLS = [("tol1e4", r"$e_{\rm tol}=10^{-4}$ ($\varepsilon=5$ K)",
          "#2e75b6", "o"),
         ("tol1e7", r"$e_{\rm tol}=10^{-7}$ ($\varepsilon=0.01$ K)",

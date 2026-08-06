@@ -73,7 +73,7 @@ def main() -> None:
 
     # One layer of the bull path (mm) + arclength.
     pts = np.vstack([a for a, on in build_path_sections_nd_from_ini(
-        "configs/examples/fast_heat.ini", len_scale=1.0) if on]) * 1e3
+        "configs/examples/bull.ini", len_scale=1.0) if on]) * 1e3
     s = np.concatenate([[0.0], np.cumsum(
         np.linalg.norm(np.diff(pts, axis=0), axis=1))])
     layer_len = s[-1]

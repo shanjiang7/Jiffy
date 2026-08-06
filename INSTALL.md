@@ -86,7 +86,7 @@ seconds of compute):
 ```bash
 python3 -u src/hermes/scripts/segment_correction/plan_only.py \
   --config configs/examples/sim_ex1.ini \
-  --path-config configs/examples/fast_heat.ini \
+  --path-config configs/examples/bull.ini \
   --world-size 8 --planner-mode exact_dp
 ```
 

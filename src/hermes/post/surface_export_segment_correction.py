@@ -196,7 +196,7 @@ def main():
     )
     ap.add_argument(
         "--path-config",
-        default="configs/examples/fast_heat.ini",
+        default="configs/examples/bull.ini",
         help="Path/DAG config used to reconstruct moving snapshot positions.",
     )
     ap.add_argument(
