@@ -1,4 +1,4 @@
-# Camera-ready reproduction pipeline
+# Reproduction pipeline
 
 Every experimental result in the paper maps to a runner (sbatch, submit
 from a Vista login node after `source env_vista.sh` in the repo root) and

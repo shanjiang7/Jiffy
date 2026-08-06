@@ -80,15 +80,19 @@ On a GPU node (e.g. an interactive session):
 python3 -c "import cupy; cupy.zeros(1); print('GPU OK:', cupy.cuda.runtime.getDeviceCount(), 'device(s)')"
 ```
 
-Then run a planning-only pass of the full pipeline (single GPU, a few
-seconds of compute):
+Then run a planning-only pass of the full pipeline (single GPU):
 
 ```bash
 python3 -u src/hermes/scripts/segment_correction/plan_only.py \
   --config configs/examples/sim_ex1.ini \
   --path-config configs/examples/bull.ini \
+  --dt-us 10 \
   --world-size 8 --planner-mode exact_dp
 ```
+
+The first run builds the dependency-lookup table numerically (~80 s on a
+GH200; cached in `.hermes_cache/` afterwards), then plans in a few
+seconds.
 
 A successful run prints the segment and component counts, the dependency-DAG
 statistics, and the component-to-rank assignment with predicted per-rank
@@ -101,10 +105,6 @@ Rank-to-GPU binding reads the launcher's local-rank environment variable:
 `PMI_LOCAL_RANK`. Under Slurm (`srun`) this is automatic. Under a bare
 `mpirun` from another MPI, make sure one of these variables is exported per
 rank — if none is set, **every rank silently binds to GPU 0**.
-
-`env_vista.sh` activates the conda environment from `CONDA_ROOT`
-(defaulting to the authors' TACC installation); set
-`CONDA_ROOT=/path/to/your/anaconda3` before sourcing it on other systems.
 
 The `r_eps` dependency-lookup table is cached in `.hermes_cache/` under the
 **current working directory**; launch runs from the repository root so the

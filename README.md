@@ -4,18 +4,19 @@
 
 JIFFY is a GPU-based solver for the transient heat equation in laser
 powder-bed fusion problems that appear in metal additive manufacturing.
-The related paper appears in the ACM/IEEE SC'26 conference.
+The related paper appears in the proceedings of ACM/IEEE SC'26.
 
-JIFFY parallelizes laser powder-bed heat transfer simulations  **both in space and time**.
-In space, it relies on the HERMES single-GPU solver. In time it uses multi-GPUs: 
-the laser path is split into segments, each rank solves
+JIFFY parallelizes laser powder-bed heat transfer simulations **both in
+space and time**. In space, it relies on the HERMES single-GPU solver. In
+time, it uses multiple GPUs: the laser path is split into segments, each rank solves
 its segments' source-on fields independently, and inter-segment thermal
 influence is restored by superposing source-off *corrections* along a
 segment-level dependency DAG. A calibrated threshold ε (Table I) bounds the
 error of every neglected dependency, giving a tunable accuracy target
-(rel-L2 1e-4 or 1e-7) at parallel speed. 
+(rel-L2 1e-4 or 1e-7) at parallel speed.
 
-The instructions below is for running on the `Vista` system on the Texas Advanced Computing Center (TACC)
+The instructions below are for the `Vista` system at the Texas
+Advanced Computing Center (TACC).
 
 Repository layout:
 
@@ -25,6 +26,8 @@ examples/            small runnable cases (start here)
 configs/examples/    canonical paths + simulation grids
 configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
 configs/images/      raster path images for the test cases in the SC'26 paper (Bull, Texas, and others)
+configs/experiments/ 15-layer variants and the parametric study's low-accuracy arm
+configs/weak_scaling/ per-rank-count weak-scaling problems (p1-p64, two tolerances)
 experiments/         the paper's reproduction pipeline, one directory per
                      experiment family: scaling/, accuracy/, visualization/
                      (see experiments/README.md for the figure/table map)
@@ -82,6 +85,7 @@ resubmission, so a timed-out job can simply be resubmitted.
 **Table I straight-line calibration**:
 
 ```bash
+# single GPU node; sweeps the straight-line cases behind the calibration table
 python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 ```
 
@@ -128,8 +132,7 @@ python experiments/accuracy/dag_indegree_stats.py
 sbatch experiments/accuracy/run_self_convergence_sbatch.sh
 ```
 
-The full figure/table → script map, with expected runtimes and the
-measurement protocol, is in
+The full figure/table → script map and the measurement protocol are in
 [`experiments/README.md`](experiments/README.md).
 
 **Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
