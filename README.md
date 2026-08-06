@@ -93,11 +93,13 @@ sbatch experiments/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, 
 python experiments/scaling/plot_strong_scaling.py
 ```
 
-**15-layer strong scaling to 64 ranks** (baseline first, then the sweep):
+**15-layer strong scaling to 64 ranks**:
 
 ```bash
-B=$(sbatch --parsable experiments/scaling/run_multilayer_baseline_sbatch.sh bull | tail -1)
-sbatch --dependency=afterok:$B experiments/scaling/run_multilayer_sweep_sbatch.sh bull   # also: spiral_raster
+# 1-rank baseline — run this first and let it finish:
+sbatch experiments/scaling/run_multilayer_baseline_sbatch.sh bull        # also: spiral_raster
+# then the 8-64-rank sweep:
+sbatch experiments/scaling/run_multilayer_sweep_sbatch.sh bull           # also: spiral_raster
 ```
 
 **Weak scaling** (problem grows with the rank count, two accuracy targets):
@@ -107,14 +109,16 @@ sbatch experiments/scaling/run_weak_scaling_sbatch.sh spiral_raster     # also: 
 python experiments/scaling/plot_weak_scaling.py
 ```
 
-**Accuracy tables** (serial references once, then the 32-rank runs; the
-straight-line rows have their own runner; the DAG in-degree column
-is CPU-only):
+**Accuracy tables**:
 
 ```bash
-R=$(sbatch --parsable experiments/accuracy/run_accuracy_serial_refs_sbatch.sh | tail -1)
-sbatch --dependency=afterok:$R experiments/accuracy/run_accuracy_sbatch.sh bull   # also: spiral_raster
+# serial references — run this first and let it finish (built once, reused):
+sbatch experiments/accuracy/run_accuracy_serial_refs_sbatch.sh
+# then the 32-rank runs:
+sbatch experiments/accuracy/run_accuracy_sbatch.sh bull      # also: spiral_raster
+# straight-line rows (self-contained: builds its own reference):
 sbatch experiments/accuracy/run_accuracy_straight_sbatch.sh
+# max DAG in-degree column (CPU-only):
 python experiments/accuracy/dag_indegree_stats.py
 ```
 
