@@ -2,8 +2,9 @@
 
 ## 1. Description
 
-Jiffy a GPU-based solver for transient heat equation for laser bed powder fusion problem that
-appear in metal additive manufacturing. The related paper appeared in the ACM/IEEE SC'26 conference. 
+JIFFY is a GPU-based solver for the transient heat equation in laser
+powder-bed fusion problems that appear in metal additive manufacturing.
+The related paper appears in the ACM/IEEE SC'26 conference.
 
 JIFFY parallelizes laser powder-bed heat transfer simulations  **both in space and time**.
 In space, it relies on the HERMES single-GPU solver. In time it uses multi-GPUs: 
@@ -24,9 +25,12 @@ examples/            small runnable cases (start here)
 configs/examples/    canonical paths + simulation grids
 configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
 configs/images/      raster path images for the test cases in the SC'26 paper (Bull, Texas, and others)
-scripts/accuracy/    accuracy jobs (serial reference → 8-rank parallel → compare)
-scripts/scaling/     strong-/weak-scaling and MPS jobs
+experiments/         the paper's reproduction pipeline: one runner + one plot
+                     script per figure/table (see experiments/README.md)
+scripts/             shared utilities (scaling aggregation, straight-line accuracy job)
 src/hermes/          single-GPU moving laser solver, DAG builder, partitioner, multi-rank runtime, post-processing
+legacy/              the original standalone multi-level HERMES solver (provenance only)
+docs/                error-analysis derivation notes
 ```
 
 ## 2. Installing the artifact
@@ -68,8 +72,8 @@ The three steps it runs, and their outputs:
    error between the two; the maximum should be at or below the 1e-4
    target (`comparison_summary.json`).
 
-The same three-step pattern, at 8 ranks and on the other scan paths, is what
-the batch jobs in `scripts/` automate.
+The same three-step pattern, at 8–64 ranks and on the other scan paths, is
+what the batch jobs in `experiments/` automate.
 
 ## 4. Reproducing the paper's tables and figures
 
@@ -83,31 +87,48 @@ resubmission, so a timed-out job can simply be resubmitted.
 python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 ```
 
-**Strong scaling, Sec. V-C** (one rank per GPU; one job per scan path):
+**Strong scaling** (one rank per GPU; one job per scan path; the
+`continuous_hybrid_eps5` case is the parametric study's low-accuracy arm):
 
 ```bash
-sbatch scripts/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, continuous_hybrid, hilbert
-python scripts/scaling/collect_scaling.py --root outputs/strong_scaling_h18 --all --plot
+sbatch experiments/run_strong_scaling_sbatch.sh bull     # also: texas, continuous_hybrid, hilbert, continuous_hybrid_eps5
+python experiments/plot_strong_scaling.py
 ```
 
-**Weak scaling, Sec. V-D** (problem grows with the rank count):
+**15-layer strong scaling to 64 ranks** (baseline first, then the sweep):
 
 ```bash
-sbatch scripts/scaling/run_weak_scaling_sbatch.sh continuous_hybrid     # also: bull
-python scripts/scaling/collect_scaling.py --root outputs/weak_scaling_h18 --all --weak --plot
+B=$(sbatch --parsable experiments/run_multilayer_baseline_sbatch.sh bull | tail -1)
+sbatch --dependency=afterok:$B experiments/run_multilayer_sweep_sbatch.sh bull   # also: continuous_hybrid
 ```
 
-`collect_scaling.py` aggregates the per-run timing summaries into the
-speedup/efficiency tables and plots corresponding to the paper's scaling
-figures.
-
-**Accuracy, Tables IV/V** (each job prints a final max/mean rel-L2 summary):
+**Weak scaling** (problem grows with the rank count, two accuracy targets):
 
 ```bash
+sbatch experiments/run_weak_scaling_sbatch.sh continuous_hybrid     # also: bull
+python experiments/plot_weak_scaling.py
+```
+
+**Accuracy tables** (serial references once, then the 32-rank runs; the
+straight-line rows come from `scripts/accuracy/`; the DAG in-degree column
+is CPU-only):
+
+```bash
+R=$(sbatch --parsable experiments/run_accuracy_serial_refs_sbatch.sh | tail -1)
+sbatch --dependency=afterok:$R experiments/run_accuracy_sbatch.sh bull   # also: continuous_hybrid, texas, hilbert
 sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
-sbatch scripts/accuracy/run_accuracy_continuous_hybrid_sbatch.sh
-sbatch scripts/accuracy/run_accuracy_bull_sbatch.sh
+python experiments/dag_indegree_stats.py
 ```
+
+**Self-convergence table**:
+
+```bash
+sbatch experiments/run_self_convergence_sbatch.sh
+```
+
+The full figure/table → script map, with expected runtimes and the
+measurement protocol, is in
+[`experiments/README.md`](experiments/README.md).
 
 **Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
 snapshots into VTK time series for ParaView.

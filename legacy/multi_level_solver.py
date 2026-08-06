@@ -131,7 +131,7 @@ args = parser.parse_args()
 # Project root (repo root = 3 levels up from scripts/)
 project_root = Path(__file__).resolve().parents[3]
 
-# If user gave --config use it, otherwise default to configs/sim.ini
+# If user gave --config use it, otherwise default to legacy/sim.ini
 if args.config is not None:
     config_path = (project_root / "configs"  / args.config).resolve()
 else:

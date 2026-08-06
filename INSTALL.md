@@ -93,3 +93,19 @@ python3 -u src/hermes/scripts/segment_correction/plan_only.py \
 A successful run prints the segment and component counts, the dependency-DAG
 statistics, and the component-to-rank assignment with predicted per-rank
 loads, and writes `planning_summary.json` under `outputs/segment_plan/`.
+
+## 6. Multi-GPU notes
+
+Rank-to-GPU binding reads the launcher's local-rank environment variable:
+`SLURM_LOCALID`, falling back to `OMPI_COMM_WORLD_LOCAL_RANK`, then
+`PMI_LOCAL_RANK`. Under Slurm (`srun`) this is automatic. Under a bare
+`mpirun` from another MPI, make sure one of these variables is exported per
+rank — if none is set, **every rank silently binds to GPU 0**.
+
+`env_vista.sh` activates the conda environment from `CONDA_ROOT`
+(defaulting to the authors' TACC installation); set
+`CONDA_ROOT=/path/to/your/anaconda3` before sourcing it on other systems.
+
+The `r_eps` dependency-lookup table is cached in `.hermes_cache/` under the
+**current working directory**; launch runs from the repository root so the
+~80 s table build is paid only once.
