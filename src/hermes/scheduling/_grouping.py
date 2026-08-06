@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 # Fixed cost of one boundary correction tracer, in supersegments of source-on
-# work. Calibrated 2026-07-28 as the pooled least-squares fit over 101
+# work. Calibrated as the pooled least-squares fit over 101
 # profiled tracers (Bull h=18um, eps=0.01K, ranks 8/32/64, march+capture):
 # tracer_seconds ~= 3.98 + 0.1075*span_ss, i.e. a0 = 3.98/0.506 ~= 7.9 SS and
 # slope 0.21 (pair with --correction-weight 0.21). Mechanism (profiled): the

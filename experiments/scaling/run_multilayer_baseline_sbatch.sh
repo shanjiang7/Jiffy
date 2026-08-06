@@ -1,5 +1,5 @@
 #!/bin/bash
-# Camera-ready experiment 2b, part 1: the 15-layer 1-rank baseline
+# 15-layer strong scaling, part 1: the 1-rank baseline
 # (~3.5-4 h, single GPU, timing-only). On one rank the partitioner assigns
 # the whole path either way, so the exact_dp baseline is copied as the
 # uniform baseline instead of burning a second multi-hour run (identical
@@ -7,13 +7,13 @@
 #
 # Usage:  sbatch experiments/scaling/run_multilayer_baseline_sbatch.sh <bull|spiral_raster>
 
-#SBATCH -J cr_ml_base
+#SBATCH -J ml_base
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 06:00:00
-#SBATCH -o logs/cr_ml_base_%j.out
-#SBATCH -e logs/cr_ml_base_%j.err
+#SBATCH -o logs/ml_base_%j.out
+#SBATCH -e logs/ml_base_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 
@@ -33,7 +33,7 @@ case "${PATH_NAME}" in
   spiral_raster) ML_CFG=configs/experiments/spiral_raster_ml15.ini ;;
   *) echo "ERROR: unknown path '${PATH_NAME}' (bull|spiral_raster)" >&2; exit 1 ;;
 esac
-RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}
+RUN_ROOT=outputs/strong_scaling_ml15/${PATH_NAME}
 OUT_DIR="${RUN_ROOT}/exact_dp/parallel_1r"
 
 if [ ! -f "${OUT_DIR}/timing_summary.json" ]; then

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Self-convergence ladder at the +4 SS/iteration horizon step (explicit override;
-# 6 iterations = +24 SS total, the protocol of the published
-# tab:self_convergence table. Bull + continuous-hybrid, tol1e4, 32 ranks,
+# Self-convergence ladder: +4 SS of correction per iteration, 6 iterations
+# (+24 SS total) — the protocol of the paper's self-convergence table.
+# Bull + spiral-raster, tol1e4, 32 ranks,
 # stride-10 snapshots vs the stride-10 serial references (matches
 # the accuracy-table sampling, so u0 equals the Table IV entry).
 # Prints the paper-style table (tab:self_convergence format):
@@ -9,13 +9,13 @@
 #
 # Usage:  sbatch experiments/accuracy/run_self_convergence_sbatch.sh
 
-#SBATCH -J cr_selfchk4
+#SBATCH -J selfchk4
 #SBATCH -N 8
 #SBATCH -n 32
 #SBATCH --ntasks-per-node=4
 #SBATCH -t 4:00:00
-#SBATCH -o logs/cr_selfchk4_%j.out
-#SBATCH -e logs/cr_selfchk4_%j.err
+#SBATCH -o logs/selfchk4_%j.out
+#SBATCH -e logs/selfchk4_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 
@@ -84,7 +84,7 @@ run_ladder spiral_raster
 
 echo ""
 echo "===== [$(date)] paper-style tables (step +4 SS/iter, 32 ranks, tol1e4) ====="
-L=logs/cr_selfchk4_${SLURM_JOB_ID}.out
+L=logs/selfchk4_${SLURM_JOB_ID}.out
 python3 - "$L" "${TAG}" "${ITERS}" <<'PY'
 import json, pathlib, re, sys
 

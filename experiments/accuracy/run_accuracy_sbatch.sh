@@ -1,5 +1,5 @@
 #!/bin/bash
-# Camera-ready campaign, experiment 4: accuracy vs cut count at snapshot
+# Accuracy study: observed error vs cut count at snapshot
 # stride 10. One job per path; per tolerance target runs 8/16/32 ranks
 # (7/15/31 cuts) with the default planner logic (exact_dp, w = 0.21,
 # a0 = 7.9 SS) and compares rel-L2 against the stride-10 serial references
@@ -12,13 +12,13 @@
 #
 # Usage:  sbatch --dependency=afterok:<refjob> experiments/accuracy/run_accuracy_sbatch.sh <bull|spiral_raster>
 
-#SBATCH -J cr_acc_cuts
+#SBATCH -J acc_cuts
 #SBATCH -N 8
 #SBATCH -n 32
 #SBATCH --ntasks-per-node=4
 #SBATCH -t 06:00:00
-#SBATCH -o logs/cr_acc_cuts_%j.out
-#SBATCH -e logs/cr_acc_cuts_%j.err
+#SBATCH -o logs/acc_cuts_%j.out
+#SBATCH -e logs/acc_cuts_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 

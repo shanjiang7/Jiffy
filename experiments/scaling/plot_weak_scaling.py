@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Camera-ready weak-scaling figure: efficiency vs ranks (1,8,16,32,64), one
+Weak-scaling figure: efficiency vs ranks (1,8,16,32,64), one
 panel per path, two curves per panel — the calibrated 1e-4 target
 (Lseg=0.9mm, eps=5K) and 1e-7 target (Lseg=1.3mm, eps=0.01K).
 
-Data: outputs/cr_weak_scaling_h18/<path>/<tol>/scaling_summary.csv
+Data: outputs/weak_scaling_h18/<path>/<tol>/scaling_summary.csv
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = Path("outputs/cr_weak_scaling_h18")
+ROOT = Path("outputs/weak_scaling_h18")
 PATHS = [("bull", "Bull"), ("spiral_raster", "Spiral-Raster")]
 TOLS = [("tol1e4", r"$e_{\rm tol}=10^{-4}$ ($\varepsilon=5$ K)",
          "#2e75b6", "o"),

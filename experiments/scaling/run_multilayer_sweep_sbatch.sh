@@ -1,18 +1,18 @@
 #!/bin/bash
-# Camera-ready experiment 2b, part 2: 15-layer Bull strong scaling sweep,
+# 15-layer strong scaling, part 2: the sweep,
 # ranks {8, 16, 32, 64} x {uniform, exact_dp}, 1 rank/GPU, timing-only.
 # 25,170 SS -> exact_dp auto-delegates to the crossing-point search with
 # layer-clamped charged spans. Submit with --dependency=afterok:<baseline>.
 #
 # Usage:  sbatch --dependency=afterok:<baseline job> experiments/scaling/run_multilayer_sweep_sbatch.sh
 
-#SBATCH -J cr_ml_sweep
+#SBATCH -J ml_sweep
 #SBATCH -N 64
 #SBATCH -n 64
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 08:00:00
-#SBATCH -o logs/cr_ml_sweep_%j.out
-#SBATCH -e logs/cr_ml_sweep_%j.err
+#SBATCH -o logs/ml_sweep_%j.out
+#SBATCH -e logs/ml_sweep_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 
@@ -32,7 +32,7 @@ case "${PATH_NAME}" in
   spiral_raster) ML_CFG=configs/experiments/spiral_raster_ml15.ini ;;
   *) echo "ERROR: unknown path '${PATH_NAME}' (bull|spiral_raster)" >&2; exit 1 ;;
 esac
-RUN_ROOT=outputs/cr_strong_scaling_ml15/${PATH_NAME}
+RUN_ROOT=outputs/strong_scaling_ml15/${PATH_NAME}
 RANK_SWEEP=${RANK_SWEEP:-"8 16 24 32 40 48 56 64"}
 PLANNER_MODES=${PLANNER_MODES:-"exact_dp uniform"}
 

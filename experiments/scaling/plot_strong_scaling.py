@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-Camera-ready strong-scaling figures, matching the submitted figure style
-(2x2 per-path panels, Uniform orange vs Optimized blue vs dashed Ideal,
+Strong-scaling figures (2x2 per-path panels, Uniform orange vs Optimized blue vs dashed Ideal,
 per-point speedup labels, baseline duration note).
 
   fig 1: strong_scaling_8ranks.png   1-8 ranks, h=18um, four paths
-         (outputs/cr_strong_scaling_h18/<path>/scaling_summary.csv)
+         (outputs/strong_scaling_h18/<path>/scaling_summary.csv)
   fig 2: strong_scaling_ml15.png     15-layer builds, 1,8,16,32,64 ranks
-         (outputs/cr_strong_scaling_ml15/<path>/scaling_summary.csv)
+         (outputs/strong_scaling_ml15/<path>/scaling_summary.csv)
 
-Speedup is relative to each strategy's own 1-rank baseline (submitted
-convention); the printed baseline duration is the optimized-run baseline.
+Speedup is relative to each strategy's own 1-rank baseline; the printed
+baseline duration is the optimized-run baseline.
 """
 from __future__ import annotations
 
@@ -69,14 +68,14 @@ def panel(ax, data, title, label_ranks, ideal_max, spread=1.0, label_fs=15,
 def fig_8ranks() -> None:
     fig, axes = plt.subplots(2, 2, figsize=(12.6, 11.8), dpi=250)
     for ax, (key, title) in zip(axes.flat, PATHS_8R):
-        data = load("outputs/cr_strong_scaling_h18", key)
+        data = load("outputs/strong_scaling_h18", key)
         panel(ax, data, title, label_ranks=set(range(2, 9)), ideal_max=8,
               spread=1.3, label_fs=17, label_dx=16.0)
         ax.set_xticks(range(1, 9))
         ax.set_ylim(0, 8.6)
     fig.tight_layout()
-    fig.savefig("outputs/cr_strong_scaling_h18/strong_scaling_8ranks.png")
-    print("[ok] outputs/cr_strong_scaling_h18/strong_scaling_8ranks.png")
+    fig.savefig("outputs/strong_scaling_h18/strong_scaling_8ranks.png")
+    print("[ok] outputs/strong_scaling_h18/strong_scaling_8ranks.png")
 
 
 def fig_ml15() -> None:
@@ -84,7 +83,7 @@ def fig_ml15() -> None:
     # and hide the DP-vs-uniform gap at 32-64 ranks.
     fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.9), dpi=250)
     for ax, (key, title) in zip(axes.flat, PATHS_ML):
-        data = load("outputs/cr_strong_scaling_ml15", key)
+        data = load("outputs/strong_scaling_ml15", key)
         panel(ax, data, f"{title} (15 layers)",
               label_ranks={8, 16, 24, 32, 40, 48, 56, 64}, ideal_max=64,
               spread=2.2, label_fs=17, label_dx=20.0)
@@ -92,8 +91,8 @@ def fig_ml15() -> None:
         ax.set_xlim(-1, 67)
         ax.set_ylim(0, 68)
     fig.tight_layout()
-    fig.savefig("outputs/cr_strong_scaling_ml15/strong_scaling_ml15.png")
-    print("[ok] outputs/cr_strong_scaling_ml15/strong_scaling_ml15.png")
+    fig.savefig("outputs/strong_scaling_ml15/strong_scaling_ml15.png")
+    print("[ok] outputs/strong_scaling_ml15/strong_scaling_ml15.png")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 UNI = "#f0a202"
 OPT = "#2e75b6"
-ROOT = Path("outputs/cr_strong_scaling_h18")
+ROOT = Path("outputs/strong_scaling_h18")
 PANELS = [("spiral_raster_eps5", "Spiral-Raster, Accuracy: 1e-4"),
           ("spiral_raster", "Spiral-Raster, Accuracy: 1e-7")]
 

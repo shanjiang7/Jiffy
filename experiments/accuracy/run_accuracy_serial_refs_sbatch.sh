@@ -1,19 +1,19 @@
 #!/bin/bash
-# Camera-ready campaign, step 1a: regenerate the four accuracy serial
-# references at snapshot stride 10 (was 25) — bull/hybrid x tol1e4/tol1e7,
-# h = 30 um accuracy grid. Four single-GPU runs execute CONCURRENTLY on four
-# nodes. New refs land in <root>/serial_s10/ so the stride-25 refs stay
-# untouched. Resumable: an existing serial_s10/snapshots_ser is skipped.
+# Accuracy study, step 1: build the four serial references at snapshot
+# stride 10 — bull/spiral-raster x tol1e4/tol1e7, h = 30 um accuracy grid.
+# Four single-GPU runs execute CONCURRENTLY on four nodes; references land
+# in <root>/serial_s10/. Resumable: an existing serial_s10/snapshots_ser is
+# skipped.
 #
 # Usage:  sbatch experiments/accuracy/run_accuracy_serial_refs_sbatch.sh
 
-#SBATCH -J cr_ser_s10
+#SBATCH -J ser_s10
 #SBATCH -N 4
 #SBATCH -n 4
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 2:00:00
-#SBATCH -o logs/cr_ser_s10_%j.out
-#SBATCH -e logs/cr_ser_s10_%j.err
+#SBATCH -o logs/ser_s10_%j.out
+#SBATCH -e logs/ser_s10_%j.err
 #SBATCH -p gh-dev
 #SBATCH -A ASC21034
 
@@ -47,7 +47,7 @@ run_ref () {
     --config "${SIM_CONFIG}" --path-config "${CFG}" \
     --dt-us 10 --snap-every-steps "${SNAP_EVERY}" \
     --out-dir "${ROOT}/serial_s10" \
-    > "logs/cr_ser_s10_${PATHKEY}_${TOL}.log" 2>&1
+    > "logs/ser_s10_${PATHKEY}_${TOL}.log" 2>&1
   echo " [$(date)] ${PATHKEY}/${TOL}: done (rc=$?)"
 }
 

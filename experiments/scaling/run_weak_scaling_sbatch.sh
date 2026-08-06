@@ -1,7 +1,6 @@
 #!/bin/bash
-# Camera-ready campaign, experiment 5: weak scaling to 64 ranks (1 rank/GPU)
-# at TWO accuracy targets. P in {1, 8, 16, 32, 64}, exact_dp only (settled
-# 2026-07-29), w = 0.21 + a0 = 7.9 SS defaults. Problem growth: bull extent
+# Weak scaling to 64 ranks (1 rank/GPU) at TWO accuracy targets.
+# P in {1, 8, 16, 32, 64}, exact_dp, w = 0.21 + a0 = 7.9 SS defaults. Problem growth: bull extent
 # x sqrt(P), spiral-raster motif x P. Per (P, tol) the calibrated (Lseg, eps)
 # pair from Table I is baked into configs/weak_scaling/:
 #   tol1e4 -> Lseg 90 steps, eps 5 K;  tol1e7 -> Lseg 130 steps, eps 0.01 K.
@@ -9,13 +8,13 @@
 #
 # Usage:  sbatch experiments/scaling/run_weak_scaling_sbatch.sh <bull|spiral_raster>
 
-#SBATCH -J cr_weak
+#SBATCH -J weak
 #SBATCH -N 64
 #SBATCH -n 64
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 06:00:00
-#SBATCH -o logs/cr_weak_%j.out
-#SBATCH -e logs/cr_weak_%j.err
+#SBATCH -o logs/weak_%j.out
+#SBATCH -e logs/weak_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 
@@ -40,7 +39,7 @@ DT_US=10
 CORRECTION_WEIGHT=0.21
 RANK_SWEEP=${RANK_SWEEP:-"1 8 16 24 32 40 48 56 64"}
 TOLS=${TOLS:-"tol1e4 tol1e7"}
-RUN_ROOT=outputs/cr_weak_scaling_h18/${FAMILY}
+RUN_ROOT=outputs/weak_scaling_h18/${FAMILY}
 
 echo "======================================================"
 echo " CR weak scaling (1 rank/GPU), family=${FAMILY}"

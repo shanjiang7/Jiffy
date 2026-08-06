@@ -13,7 +13,7 @@ Examples:
   # 15-layer Bull, 64 ranks (paper default)
   python experiments/plot_rank_breakdown.py
   # single-layer, flat axis, gate-style layout
-  python experiments/plot_rank_breakdown.py --root outputs/cr_strong_scaling_h18/bull \
+  python experiments/plot_rank_breakdown.py --root outputs/strong_scaling_h18/bull \
       --run parallel_64r --no-break --out .../rank_breakdown_64r_1layer.png
 """
 from __future__ import annotations
@@ -29,11 +29,11 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--roots", nargs="+",
-                default=["outputs/cr_strong_scaling_ml15/bull"])
+                default=["outputs/strong_scaling_ml15/bull"])
 ap.add_argument("--titles", nargs="+", default=["Bull"])
 ap.add_argument("--run", default="parallel_64r")
 ap.add_argument("--out",
-                default="outputs/cr_strong_scaling_ml15/rank_breakdown_64r.png")
+                default="outputs/strong_scaling_ml15/rank_breakdown_64r.png")
 ap.add_argument("--squeeze", nargs=2, type=float, default=(0.0, 150.0),
                 help="y band to compress (start, end)")
 ap.add_argument("--ymax", type=float, default=None,

@@ -4,7 +4,7 @@ Build the ParaView bundle for the 15-layer x 64-rank hero visualization.
 
 Everything is real data, no new solver runs:
   - partition: the exact_dp 64-rank plan for the 15-layer bull
-    (outputs/cr_strong_scaling_ml15/bull/plan_dump_64r/plan_bounds.json)
+    (outputs/strong_scaling_ml15/bull/plan_dump_64r/plan_bounds.json)
   - temperature: the stride-10 serial reference windows (1 mm ROI of the
     comoving domain, h = 30 um). Every layer traces the same path, so a
     rank's mid-chunk instant in layer L maps to the same within-layer step
@@ -28,7 +28,7 @@ import numpy as np
 
 from hermes.laser_path.path_loader import build_path_sections_nd_from_ini
 
-PLAN = Path("outputs/cr_strong_scaling_ml15/bull/plan_dump_64r/plan_bounds.json")
+PLAN = Path("outputs/strong_scaling_ml15/bull/plan_dump_64r/plan_bounds.json")
 SNAP = Path("outputs/accuracy_bull_tol1e4_h30/serial_s10/snapshots_ser")
 OUT = Path("outputs/pv_bundle_ml15_bull")
 N_LAYERS = 15

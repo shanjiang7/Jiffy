@@ -6,7 +6,7 @@ from __future__ import annotations
 # The public planner mode "exact_dp" (see _partitioned.py) uses the dense
 # O(n^2) DP up to this many supersegments and the crossing-point fast DP
 # above it; the two produce identical partitions (equivalence
-# property-tested over 3000 randomized DAG/P cases, 2026-07-29).
+# property-tested over 3000 randomized DAG/P cases).
 _EXACT_DP_DENSE_LIMIT = 4096
 
 from ._grouping import (

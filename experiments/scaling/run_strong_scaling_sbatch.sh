@@ -1,22 +1,18 @@
 #!/bin/bash
-# Camera-ready campaign, experiment 1: strong scaling 1-8 ranks (1 rank/GPU),
-# one job per path, uniform + exact_dp. Differences vs the submitted-version
-# sweep (scripts/scaling/run_strong_scaling_sbatch.sh):
-#   - correction weight 0.21 (affine model, a0 = 7.9 SS is the code default);
-#   - epsilon is the config default 0.01 K (path_base.ini level_K — the
-#     artifact-reproducible setting; the submitted figure mixed eps=0.1K);
-#   - fresh run root outputs/cr_strong_scaling_h18/ (old results preserved).
-# The 1-rank runs are the baselines: timing-only, no snapshots.
+# Strong scaling, 1-8 ranks (1 rank/GPU), one job per path,
+# uniform + exact_dp. Correction weight 0.21 (affine model, a0 = 7.9 SS is
+# the code default); epsilon is the config default 0.01 K (path_base.ini
+# level_K). The 1-rank runs are the baselines: timing-only, no snapshots.
 #
 # Usage:  sbatch experiments/scaling/run_strong_scaling_sbatch.sh <bull|texas|spiral_raster|hilbert>
 
-#SBATCH -J cr_strong
+#SBATCH -J strong
 #SBATCH -N 8
 #SBATCH -n 8
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 06:00:00
-#SBATCH -o logs/cr_strong_%j.out
-#SBATCH -e logs/cr_strong_%j.err
+#SBATCH -o logs/strong_%j.out
+#SBATCH -e logs/strong_%j.err
 #SBATCH -p gh
 #SBATCH -A ASC21034
 
@@ -50,7 +46,7 @@ DT_US=10
 CORRECTION_WEIGHT=0.21
 RANK_SWEEP=${RANK_SWEEP:-"1 2 3 4 5 6 7 8"}
 PLANNER_MODES=${PLANNER_MODES:-"uniform exact_dp"}
-RUN_ROOT=outputs/cr_strong_scaling_h18/${PATH_NAME}
+RUN_ROOT=outputs/strong_scaling_h18/${PATH_NAME}
 
 echo "======================================================"
 echo " CR strong scaling (1 rank/GPU), path=${PATH_NAME}"
