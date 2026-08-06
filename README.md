@@ -30,9 +30,8 @@ configs/experiments/ 15-layer variants and the parametric study's low-accuracy a
 configs/weak_scaling/ per-rank-count weak-scaling problems (p1-p64, two tolerances)
 experiments/         the paper's reproduction pipeline, one directory per
                      experiment family: scaling/, accuracy/, visualization/
-                     (see experiments/README.md for the figure/table map)
 src/hermes/          single-GPU moving laser solver, DAG builder, partitioner, multi-rank runtime, post-processing
-legacy/              the original standalone multi-level HERMES solver (provenance only)
+legacy/              the original standalone multi-level HERMES solver
 ```
 
 ## 2. Installing the artifact
