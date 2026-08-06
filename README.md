@@ -34,9 +34,8 @@ legacy/              the original standalone multi-level HERMES solver (provenan
 
 ## 2. Installing the artifact
 
-Requirements in brief: Linux, an NVIDIA GPU with a CUDA 12.x driver, MPI
-(CUDA-aware MPI **not** required), Python 3.11. All package versions are
-pinned in `environment.yml`.
+Requirements in brief: Linux, an NVIDIA GPU with a CUDA 12.x driver, MPI,
+Python 3.11. All package versions are pinned in `environment.yml`.
 
 See **[INSTALL.md](INSTALL.md)** for the full steps: system modules, Python
 environment creation (conda or pip), environment activation
