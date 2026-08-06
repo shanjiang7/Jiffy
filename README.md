@@ -25,9 +25,9 @@ examples/            small runnable cases (start here)
 configs/examples/    canonical paths + simulation grids
 configs/accuracy/    calibrated per-tolerance configs (tol1e4: ε 5 K; tol1e7: ε 0.01 K)
 configs/images/      raster path images for the test cases in the SC'26 paper (Bull, Texas, and others)
-experiments/         the paper's reproduction pipeline: one runner + one plot
-                     script per figure/table (see experiments/README.md)
-scripts/             shared utilities (scaling aggregation, straight-line accuracy job)
+experiments/         the paper's reproduction pipeline, one directory per
+                     experiment family: scaling/, accuracy/, visualization/
+                     (see experiments/README.md for the figure/table map)
 src/hermes/          single-GPU moving laser solver, DAG builder, partitioner, multi-rank runtime, post-processing
 legacy/              the original standalone multi-level HERMES solver (provenance only)
 ```
@@ -90,39 +90,39 @@ python src/hermes/scripts/segment_correction/calibrate_straight_line.py
 `spiral_raster_eps5` case is the parametric study's low-accuracy arm):
 
 ```bash
-sbatch experiments/run_strong_scaling_sbatch.sh bull     # also: texas, spiral_raster, hilbert, spiral_raster_eps5
-python experiments/plot_strong_scaling.py
+sbatch experiments/scaling/run_strong_scaling_sbatch.sh bull     # also: texas, spiral_raster, hilbert, spiral_raster_eps5
+python experiments/scaling/plot_strong_scaling.py
 ```
 
 **15-layer strong scaling to 64 ranks** (baseline first, then the sweep):
 
 ```bash
-B=$(sbatch --parsable experiments/run_multilayer_baseline_sbatch.sh bull | tail -1)
-sbatch --dependency=afterok:$B experiments/run_multilayer_sweep_sbatch.sh bull   # also: spiral_raster
+B=$(sbatch --parsable experiments/scaling/run_multilayer_baseline_sbatch.sh bull | tail -1)
+sbatch --dependency=afterok:$B experiments/scaling/run_multilayer_sweep_sbatch.sh bull   # also: spiral_raster
 ```
 
 **Weak scaling** (problem grows with the rank count, two accuracy targets):
 
 ```bash
-sbatch experiments/run_weak_scaling_sbatch.sh spiral_raster     # also: bull
-python experiments/plot_weak_scaling.py
+sbatch experiments/scaling/run_weak_scaling_sbatch.sh spiral_raster     # also: bull
+python experiments/scaling/plot_weak_scaling.py
 ```
 
 **Accuracy tables** (serial references once, then the 32-rank runs; the
-straight-line rows come from `scripts/accuracy/`; the DAG in-degree column
+straight-line rows have their own runner; the DAG in-degree column
 is CPU-only):
 
 ```bash
-R=$(sbatch --parsable experiments/run_accuracy_serial_refs_sbatch.sh | tail -1)
-sbatch --dependency=afterok:$R experiments/run_accuracy_sbatch.sh bull   # also: spiral_raster
-sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh
-python experiments/dag_indegree_stats.py
+R=$(sbatch --parsable experiments/accuracy/run_accuracy_serial_refs_sbatch.sh | tail -1)
+sbatch --dependency=afterok:$R experiments/accuracy/run_accuracy_sbatch.sh bull   # also: spiral_raster
+sbatch experiments/accuracy/run_accuracy_straight_sbatch.sh
+python experiments/accuracy/dag_indegree_stats.py
 ```
 
 **Self-convergence table**:
 
 ```bash
-sbatch experiments/run_self_convergence_sbatch.sh
+sbatch experiments/accuracy/run_self_convergence_sbatch.sh
 ```
 
 The full figure/table → script map, with expected runtimes and the

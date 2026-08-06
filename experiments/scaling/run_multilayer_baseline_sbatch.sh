@@ -5,7 +5,7 @@
 # uniform baseline instead of burning a second multi-hour run (identical
 # physics; the copy is logged).
 #
-# Usage:  sbatch experiments/run_multilayer_baseline_sbatch.sh <bull|spiral_raster>
+# Usage:  sbatch experiments/scaling/run_multilayer_baseline_sbatch.sh <bull|spiral_raster>
 
 #SBATCH -J cr_ml_base
 #SBATCH -N 1

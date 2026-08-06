@@ -8,7 +8,7 @@
 #   - fresh run root outputs/cr_strong_scaling_h18/ (old results preserved).
 # The 1-rank runs are the baselines: timing-only, no snapshots.
 #
-# Usage:  sbatch experiments/run_strong_scaling_sbatch.sh <bull|texas|spiral_raster|hilbert>
+# Usage:  sbatch experiments/scaling/run_strong_scaling_sbatch.sh <bull|texas|spiral_raster|hilbert>
 
 #SBATCH -J cr_strong
 #SBATCH -N 8
@@ -83,4 +83,4 @@ done
 
 echo ""
 echo "[$(date)] sweep complete for ${PATH_NAME}; speedup table:"
-python3 scripts/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "${PATH_NAME}"
+python3 experiments/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "${PATH_NAME}"

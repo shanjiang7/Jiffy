@@ -7,18 +7,18 @@ skipped, so re-submitting after a timeout continues where it stopped.
 
 | Paper artifact | Runner(s) | Plot / analysis |
 |---|---|---|
-| Strong scaling, 1-8 ranks, four paths (fig) | `run_strong_scaling_sbatch.sh <path>` | `plot_strong_scaling.py` |
-| 15-layer strong scaling to 64 ranks (fig) | `run_multilayer_baseline_sbatch.sh <path>` then `run_multilayer_sweep_sbatch.sh <path>` | `plot_strong_scaling.py` |
-| Per-rank busy-time breakdown (fig) | (uses the 15-layer runs) | `plot_rank_breakdown.py` |
-| Weak scaling to 64 ranks, two targets (fig) | `run_weak_scaling_sbatch.sh <path>` | `plot_weak_scaling.py` |
-| Parametric study (fig) | `run_strong_scaling_sbatch.sh spiral_raster_eps5` (+ the tight arm above) | `plot_parametric_study.py` |
-| Accuracy tables: serial references | `run_accuracy_serial_refs_sbatch.sh` | — |
-| Accuracy tables: 32-rank observed errors | `run_accuracy_sbatch.sh <path>` | (summary printed by the job) |
-| Accuracy tables: straight-line rows | `../scripts/accuracy/run_accuracy_straight_sbatch.sh` | — |
-| Accuracy tables: max DAG in-degree column | — (CPU-only, cached r_eps) | `dag_indegree_stats.py` |
-| Self-convergence table | `run_self_convergence_sbatch.sh` | (table printed by the job) |
-| Scan-path overview figure | — | `plot_scan_paths.py` (viz-only coarsening applied in-script) |
-| Multi-layer visualization (ParaView bundle) | — | `build_pv_bundle.py`, `make_pv_state.py`, `render_single_layer_pv.py`, `plot_multilayer_hero.py` |
+| Strong scaling, 1-8 ranks, four paths (fig) | `scaling/run_strong_scaling_sbatch.sh <path>` | `scaling/plot_strong_scaling.py` |
+| 15-layer strong scaling to 64 ranks (fig) | `scaling/run_multilayer_baseline_sbatch.sh <path>` then `scaling/run_multilayer_sweep_sbatch.sh <path>` | `scaling/plot_strong_scaling.py` |
+| Per-rank busy-time breakdown (fig) | (uses the 15-layer runs) | `scaling/plot_rank_breakdown.py` |
+| Weak scaling to 64 ranks, two targets (fig) | `scaling/run_weak_scaling_sbatch.sh <path>` | `scaling/plot_weak_scaling.py` |
+| Parametric study (fig) | `scaling/run_strong_scaling_sbatch.sh spiral_raster_eps5` (+ the tight arm above) | `scaling/plot_parametric_study.py` |
+| Accuracy tables: serial references | `accuracy/run_accuracy_serial_refs_sbatch.sh` | — |
+| Accuracy tables: 32-rank observed errors | `accuracy/run_accuracy_sbatch.sh <path>` | (summary printed by the job) |
+| Accuracy tables: straight-line rows | `accuracy/run_accuracy_straight_sbatch.sh` | — |
+| Accuracy tables: max DAG in-degree column | — (CPU-only, cached r_eps) | `accuracy/dag_indegree_stats.py` |
+| Self-convergence table | `accuracy/run_self_convergence_sbatch.sh` | (table printed by the job) |
+| Scan-path overview figure | — | `visualization/plot_scan_paths.py` (viz-only coarsening applied in-script) |
+| Multi-layer visualization (ParaView bundle) | — | `visualization/` (`build_pv_bundle.py`, `make_pv_state.py`, `render_single_layer_pv.py`, `plot_multilayer_hero.py`) |
 
 Measurement protocol, applied by every runner:
 
@@ -31,7 +31,7 @@ Measurement protocol, applied by every runner:
   (`unset HERMES_CORRECTION_FIXED_COST_SS HERMES_TRACER_PROFILE`), and
   `planning_summary.json` records the cost-model constants per run.
 
-Speedup/efficiency tables are collected by `../scripts/scaling/collect_scaling.py`.
+Speedup/efficiency tables are collected by `scaling/collect_scaling.py`.
 
 Historical experiment drivers (cost-model gates, epsilon sweeps, the
 removed discontinuous-hybrid path, ablations) were deleted from the tree

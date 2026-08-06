@@ -7,7 +7,7 @@
 # Prints the paper-style table (tab:self_convergence format):
 #   iterate | true max rel-L2 | ||d_k||   + the cumulative-estimate check.
 #
-# Usage:  sbatch experiments/run_self_convergence_sbatch.sh
+# Usage:  sbatch experiments/accuracy/run_self_convergence_sbatch.sh
 
 #SBATCH -J cr_selfchk4
 #SBATCH -N 8

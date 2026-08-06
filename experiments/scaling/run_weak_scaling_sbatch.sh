@@ -7,7 +7,7 @@
 #   tol1e4 -> Lseg 90 steps, eps 5 K;  tol1e7 -> Lseg 130 steps, eps 0.01 K.
 # Timing-only runs; efficiency = T(1)/T(P) per tolerance curve. Resumable.
 #
-# Usage:  sbatch experiments/run_weak_scaling_sbatch.sh <bull|spiral_raster>
+# Usage:  sbatch experiments/scaling/run_weak_scaling_sbatch.sh <bull|spiral_raster>
 
 #SBATCH -J cr_weak
 #SBATCH -N 64
@@ -77,6 +77,6 @@ done
 echo ""
 for TOL in ${TOLS}; do
   echo "[$(date)] weak-scaling efficiency, ${FAMILY}/${TOL}:"
-  python3 scripts/scaling/collect_scaling.py --root "${RUN_ROOT}/${TOL}" \
+  python3 experiments/scaling/collect_scaling.py --root "${RUN_ROOT}/${TOL}" \
     --label "${FAMILY}_${TOL}" --weak
 done

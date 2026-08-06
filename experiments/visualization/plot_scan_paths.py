@@ -25,7 +25,7 @@ from hermes.laser_path.path_loader import build_path_sections_nd_from_ini
 # (500um) and Hilbert order 5 (instead of 7) so the path structure is visible
 # at figure scale; the spiral-raster panel shows one unit (repeats = 1) at
 # true geometry. None of these variants is used for any measurement.
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 PANELS = [
     ("bull.ini", "Bull",
      f"[path.picture]\nimage = {REPO}/configs/images/longhorn.jpg\n"

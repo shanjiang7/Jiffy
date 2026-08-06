@@ -6,7 +6,7 @@
 #   2. 8-rank parallel run (chords DAG, chord lookup source - the defaults)
 #   3. rel-L2 comparison vs the serial reference (source-on snapshots only)
 #
-# Usage:  sbatch scripts/accuracy/run_accuracy_straight_sbatch.sh   (from repo root)
+# Usage:  sbatch experiments/accuracy/run_accuracy_straight_sbatch.sh   (from repo root)
 
 #SBATCH -J acc_straight
 #SBATCH -N 8

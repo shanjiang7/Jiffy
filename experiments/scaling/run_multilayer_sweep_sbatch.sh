@@ -4,7 +4,7 @@
 # 25,170 SS -> exact_dp auto-delegates to the crossing-point search with
 # layer-clamped charged spans. Submit with --dependency=afterok:<baseline>.
 #
-# Usage:  sbatch --dependency=afterok:<baseline job> experiments/run_multilayer_sweep_sbatch.sh
+# Usage:  sbatch --dependency=afterok:<baseline job> experiments/scaling/run_multilayer_sweep_sbatch.sh
 
 #SBATCH -J cr_ml_sweep
 #SBATCH -N 64
@@ -59,4 +59,4 @@ done
 
 echo ""
 echo "[$(date)] 15-layer sweep complete; speedup table:"
-python3 scripts/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "${PATH_NAME}_ml15"
+python3 experiments/scaling/collect_scaling.py --root "${RUN_ROOT}" --label "${PATH_NAME}_ml15"
