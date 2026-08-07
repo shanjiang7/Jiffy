@@ -35,7 +35,7 @@ mkdir -p logs outputs
 source "${PROJECT_DIR}/env_vista.sh"
 
 SIM_CONFIG=configs/examples/sim_calibration.ini
-SNAP_EVERY=25
+SNAP_EVERY=10
 PLANNER_MODE=exact_dp
 
 for TOL in tol1e4 tol1e7; do

@@ -26,13 +26,13 @@ ROOT=outputs/example_straight_line
 echo "== 1/3 serial reference (single GPU) =="
 srun --kill-on-bad-exit=1 -n 1 python src/hermes/scripts/segment_correction/serial_reference_run.py \
   --config "${SIM}" --path-config "${CFG}" \
-  --dt-us 10 --snap-every-steps 25 \
+  --dt-us 10 --snap-every-steps 10 \
   --out-dir "${ROOT}/serial"
 
 echo "== 2/3 parallel run (2 ranks) =="
 srun --kill-on-bad-exit=1 -n 2 python src/hermes/scripts/segment_correction/main.py \
   --config "${SIM}" --path-config "${CFG}" \
-  --dt-us 10 --snap-every-steps 25 \
+  --dt-us 10 --snap-every-steps 10 \
   --planner-mode exact_dp --no-export-dag \
   --out-dir "${ROOT}/par2"
 
