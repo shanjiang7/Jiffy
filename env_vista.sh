@@ -11,14 +11,17 @@ export NUMBA_CUDA_DRIVER=/usr/lib64/libcuda.so
 export CUDA_HOME="${TACC_CUDA_DIR:-${CUDA_HOME}}"
 export LD_LIBRARY_PATH="/usr/lib64/:${LD_LIBRARY_PATH:-}"
 
-# Activate the hermes conda environment. Set CONDA_ROOT to your conda
-# installation; on TACC it defaults to $WORK/anaconda3.
-CONDA_ROOT="${CONDA_ROOT:-${WORK:-$HOME}/anaconda3}"
-if [ ! -f "${CONDA_ROOT}/bin/activate" ]; then
-  echo "env_vista.sh: no conda at CONDA_ROOT=${CONDA_ROOT} — export CONDA_ROOT=/path/to/your/conda (e.g. \$HOME/miniforge3)" >&2
-  return 1 2>/dev/null || exit 1
+# Activate the hermes conda environment — unless a virtualenv (pip install
+# path) is already active, which is kept as-is. For conda, set CONDA_ROOT
+# to your installation; on TACC it defaults to $WORK/anaconda3.
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+  CONDA_ROOT="${CONDA_ROOT:-${WORK:-$HOME}/anaconda3}"
+  if [ ! -f "${CONDA_ROOT}/bin/activate" ]; then
+    echo "env_vista.sh: no conda at CONDA_ROOT=${CONDA_ROOT} — export CONDA_ROOT=/path/to/your/conda (e.g. \$HOME/miniforge3)" >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  source "${CONDA_ROOT}/bin/activate"
+  conda activate hermes
 fi
-source "${CONDA_ROOT}/bin/activate"
-conda activate hermes
 
 export PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)/src:${PYTHONPATH:-}"

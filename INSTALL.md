@@ -67,10 +67,18 @@ source env_vista.sh
 
 The script loads the modules from step 1, sets the CUDA environment
 (`CUDA_HOME`, `NUMBA_CUDA_DRIVER`), activates the `hermes` conda
-environment, and puts `src/` on `PYTHONPATH`. On systems other than TACC
-Vista, adapt the `module load` and CUDA lines, and point `CONDA_ROOT` at
-your conda installation (or replace the activation lines with your own
-environment's). The `PYTHONPATH` line is location-independent.
+environment, and puts `src/` on `PYTHONPATH`. If you created a virtual
+environment with pip instead, activate it first — `env_vista.sh` detects
+the active virtualenv, keeps it, and skips the conda activation:
+
+```bash
+source jiffy_env/bin/activate
+source env_vista.sh
+```
+
+On systems other than TACC Vista, adapt the `module load` and CUDA lines,
+and point `CONDA_ROOT` at your conda installation. The `PYTHONPATH` line
+is location-independent.
 
 ## 5. Verify the installation
 
