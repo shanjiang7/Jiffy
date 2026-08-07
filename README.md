@@ -1,5 +1,7 @@
 # JIFFY — Printing in a JIFFY: a parallel-in-time heat transfer solver for additive manufacturing
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21834710.svg)](https://doi.org/10.5281/zenodo.21834710)
+
 ## 1. Description
 
 JIFFY is a GPU-based solver for the transient heat equation in laser
