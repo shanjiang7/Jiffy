@@ -41,7 +41,18 @@ conda env create -f environment.yml
 conda activate hermes
 ```
 
-Or with pip in a virtual environment:
+Or with pip in a virtual environment. Python 3.11 must be the `python3` on
+your PATH first — on TACC Vista the system python is 3.9, so load the
+Python module into the stack (stepwise, in this order; the module
+hierarchy rejects a single combined load):
+
+```bash
+module purge
+module load gcc/13.2.0
+module load python3/3.11.8
+module load openmpi/5.0.5
+module load cuda/12.5
+```
 
 ```bash
 python3 -m venv jiffy_env
@@ -99,8 +110,8 @@ python3 -u src/hermes/scripts/segment_correction/plan_only.py \
 ```
 
 The first run builds the dependency-lookup table numerically (~80 s on a
-GH200; cached in `.hermes_cache/` afterwards), then plans in a few
-seconds.
+GH200; cached in `.hermes_cache/` afterwards). With the cache in place the
+whole command takes about half a minute.
 
 A successful run prints the segment and component counts, the dependency-DAG
 statistics, and the component-to-rank assignment with predicted per-rank
