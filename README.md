@@ -136,4 +136,5 @@ The full figure/table → script map and the measurement protocol are in
 [`experiments/README.md`](experiments/README.md).
 
 **Melt-history figures**: `src/hermes/post/global_view.py` converts a run's
-snapshots into VTK time series for ParaView.
+snapshots into VTK time series for ParaView — usage in
+[`src/hermes/post/README.md`](src/hermes/post/README.md).
