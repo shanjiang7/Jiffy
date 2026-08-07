@@ -54,8 +54,9 @@ Every run takes two input files:
 
 Start with the worked example in [`examples/straight_line/`](examples/straight_line/):
 a straight track solved serially for ground truth, then in parallel on
-2 ranks, then compared. Inside an interactive 2-node GPU allocation
-(on TACC Vista: `idev -p gh-dev -N 2 -n 2 -t 00:30:00`):
+2 ranks, then compared. Run it inside an interactive GPU allocation — two
+nodes give each rank its own GPU, and a single GPU node also works (on
+TACC Vista: `idev -p gh-dev -N 2 -n 2 -t 00:30:00`):
 
 ```bash
 bash examples/straight_line/run_example.sh
