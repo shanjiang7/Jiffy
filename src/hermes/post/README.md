@@ -20,6 +20,7 @@ python src/hermes/post/global_view.py \
 ```
 
 The sim/path configs must match the ones that produced the run's
-snapshots; `--write-every` thins the output frames. In ParaView, open the
-`global_melt_..vtk` file group inside each series directory to load it as
-a time sequence.
+snapshots; `--write-every` thins the output frames (the mapping onto the
+global grid costs a few seconds per frame). The export also writes one
+`.pvd` series file per series — open the two `.pvd` files in ParaView and
+press Play.
