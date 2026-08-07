@@ -127,7 +127,7 @@ Path configs now support lightweight inheritance:
 base = path_base.ini
 ```
 
-The common DAG/run defaults live in [path_base.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/path_base.ini), while files such as [bull.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/bull.ini), [island_raster.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/island_raster.ini), [hilbert.ini](/scratch/10226/shawnraul/Parallel_Hermes/configs/hilbert.ini), and [spiral_raster.ini](configs/examples/spiral_raster.ini) now only carry path geometry plus local overrides.
+The common DAG/run defaults live in `configs/examples/path_base.ini`, while path files such as `bull.ini`, `hilbert.ini`, and `spiral_raster.ini` only carry path geometry plus local overrides.
 
 ## Segment-Correction Planning
 
