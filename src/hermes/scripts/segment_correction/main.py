@@ -309,6 +309,11 @@ def _run_parallel_pass(
                 snap_every_steps=snap_every_steps,
             )
 
+    save_base_snaps = (
+        os.environ.get("HERMES_SAVE_BASE_SNAPSHOTS", "0") == "1"
+        and not args.timing_only
+    )
+    base_states_out: dict | None = {} if save_base_snaps else None
     final_states_host, rank_timing_stats = run_parallel_tracer(
         ctx=ctx,
         ambient_gpu=ambient_gpu,
@@ -330,6 +335,7 @@ def _run_parallel_pass(
         h_m=float(rc.level3.h_tuple[0]),
         self_check_maps=self_check_maps,
         self_check_save_callback=self_check_save_cb,
+        base_states_out=base_states_out,
     )
 
     par_total_s = time.perf_counter() - par_t0
@@ -363,6 +369,30 @@ def _run_parallel_pass(
             snap_every_steps=snap_every_steps,
         )
         comm.Barrier()
+
+        if save_base_snaps and base_states_out is not None:
+            base_snaps_dir = out_dir / "snapshots_base"
+            base_meta_dir = out_dir / "snapshots_base_meta"
+            base_snaps_dir.mkdir(parents=True, exist_ok=True)
+            base_meta_dir.mkdir(parents=True, exist_ok=True)
+            comm.Barrier()
+            save_parallel_snapshots(
+                rank=rank,
+                snaps_dir=base_snaps_dir,
+                meta_dir=base_meta_dir,
+                final_states_host=base_states_out,
+                path_defs=all_path_defs,
+                path_def_by_id=path_def_by_id,
+                ss_per_layer=ss_per_layer,
+                steps_per_ss=steps_per_ss,
+                ctx=ctx,
+                h_m=h_m,
+                snapshot_steps_by_component=snapshot_steps_by_component,
+                snap_every_steps=snap_every_steps,
+            )
+            comm.Barrier()
+            if rank == 0:
+                print(f"[snapshots] pre-correction base states saved to {base_snaps_dir}")
 
     if rank == 0:
         if args.timing_only:
@@ -430,6 +460,7 @@ def _run_parallel_pass(
         print(f"Saved timing to {out_dir / 'timing_summary.json'}")
 
     del final_states_host
+    del base_states_out
     del ambient_gpu
     cp.get_default_memory_pool().free_all_blocks()
     cp.get_default_pinned_memory_pool().free_all_blocks()

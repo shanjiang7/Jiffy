@@ -409,6 +409,7 @@ def run_parallel_tracer(
     h_m: float | None = None,
     self_check_maps: dict | None = None,
     self_check_save_callback=None,
+    base_states_out: Dict[int, List[np.ndarray]] | None = None,
 ) -> tuple[Dict[int, List[np.ndarray]], dict[str, float]]:
     """
     Pipelined component execution with source-side tracer correction.
@@ -720,6 +721,12 @@ def run_parallel_tracer(
             timing_stats=timing_stats,
             save_callback=self_check_save_callback,
         )
+
+    if base_states_out is not None and collect_output_snapshots:
+        # Pre-correction (source-on only) snapshots, for the base/correction/
+        # full decomposition figure; same component/step layout as the final
+        # states. _superpose_correction_lists copies, so these are pristine.
+        base_states_out.update(base_states_host)
 
     return (final_states_host if collect_output_snapshots else {}), timing_stats
 
