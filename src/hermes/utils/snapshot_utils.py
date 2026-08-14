@@ -1,6 +1,8 @@
 """Utilities for cropping and saving temperature-field snapshots."""
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 
@@ -37,6 +39,15 @@ def crop_snapshot(
     - ncx/ncy ≤ floor(roi_xy_m / h_m)
     - ncz ≤ floor(roi_z_m / h_m)
     """
+    # Optional ROI override for visualization runs (values in mm); the crop is
+    # clamped to the grid, so an oversized ROI yields the full moving domain.
+    env_xy = os.environ.get("HERMES_SNAPSHOT_ROI_XY_MM")
+    env_z = os.environ.get("HERMES_SNAPSHOT_ROI_Z_MM")
+    if env_xy is not None:
+        roi_xy_m = float(env_xy) * 1e-3
+    if env_z is not None:
+        roi_z_m = float(env_z) * 1e-3
+
     n_crop_xy = max(1, int(roi_xy_m / h_m))
     n_crop_z = max(1, int(roi_z_m / h_m))
     u3d = arr.reshape((nx, ny, nz), order="F")
