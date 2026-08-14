@@ -88,50 +88,81 @@ def main() -> None:
     zsp = args.layer_spacing_mm * 1e-3
 
     # --- per-rank snapshot at fraction f of its block -----------------------
+    # Multi-layer snapshot metadata (layer/index/center) is unreliable for
+    # components that straddle layer boundaries, so everything is derived
+    # from the trustworthy fields (component_id, component_step) plus the
+    # plan's SS ranges and the path geometry itself.
     meta_by_rank: dict[int, list[dict]] = {r: [] for r in part}
     for f in sorted((run / "snapshots_par_meta").glob("rank_*.jsonl")):
         r = int(f.stem.split("_")[1])
         for line in f.read_text().splitlines():
             meta_by_rank.setdefault(r, []).append(json.loads(line))
 
-    out = Path(args.out_dir) if args.out_dir else run / "vtk_instant"
-    (out / "domains").mkdir(parents=True, exist_ok=True)
-    summary = []
-    done_ss: set[int] = set()
-    for r, block in sorted(part.items()):
-        target_global = int((block[0] + args.fraction * len(block)) * steps_per_ss)
-        best, best_d = None, None
-        for rec in meta_by_rank.get(r, []):
-            g = int(rec["layer"]) * ss_per_layer * steps_per_ss + int(rec["index"])
-            d = abs(g - target_global)
-            if best_d is None or d < best_d:
-                best, best_d, best_g = rec, d, g
-        if best is None:
-            raise SystemExit(f"rank {r}: no snapshots found")
-        # sanity: the snapshot's layer must match the SS it belongs to
-        ss_of_snap = best_g // steps_per_ss
-        if ss_of_snap // ss_per_layer != int(best["layer"]):
-            print(f"[warn] rank {r}: snapshot layer {best['layer']} != SS-derived layer "
-                  f"{ss_of_snap // ss_per_layer} (global step {best_g}) — check bookkeeping")
-        arr = np.load(run / "snapshots_par" / best["file"])
-        cx = float(best["center_x_nd"]) * len_scale
-        cy = float(best["center_y_nd"]) * len_scale
-        lz = int(best["layer"]) * zsp
-        ncx, ncy, ncz = arr.shape
-        origin = (cx - 0.5 * (ncx - 1) * h_m, cy - 0.5 * (ncy - 1) * h_m, lz - (ncz - 1) * h_m)
-        _write_vtk_volume(out / "domains" / f"rank_{r:02d}.vtk", Ts + arr * deltaT, "full_K", origin, h_m)
-        done_ss.update(range(block[0], min(block[-1] + 1, ss_of_snap + 1)))
-        summary.append({"rank": r, "block": [block[0], block[-1]], "global_step": best_g,
-                        "layer": int(best["layer"]), "x_mm": cx * 1e3, "y_mm": cy * 1e3})
-        print(f"rank {r:2d}: SS [{block[0]:4d},{block[-1]:4d}]  step {best_g:7d}  "
-              f"layer {best['layer']}  at ({cx*1e3:7.3f}, {cy*1e3:7.3f}) mm")
-
-    # --- path polylines, one copy per layer, chopped per SS ----------------
+    # geometry: the (single-layer) path, densely resampled by arc length
     sections = build_path_sections_nd_from_ini(args.path_config, len_scale=1.0)
     pts_nd = np.vstack([a for a, on in sections if on])
     pts_m = pts_nd * len_scale
     seg = np.linalg.norm(np.diff(pts_m, axis=0), axis=1)
     arc = np.concatenate([[0.0], np.cumsum(seg)])
+
+    def pos_at_within_layer_step(w: int) -> tuple[float, float]:
+        a = min(w * args.step_m, arc[-1])
+        return float(np.interp(a, arc, pts_m[:, 0])), float(np.interp(a, arc, pts_m[:, 1]))
+
+    # per-rank components = the rank's contiguous block split at layer
+    # boundaries, in path order; meta component_ids sort in the same order
+    def layer_pieces(block: list[int]) -> list[tuple[int, int]]:
+        pieces = []
+        cur = [block[0]]
+        for s in block[1:]:
+            if s // ss_per_layer == cur[-1] // ss_per_layer:
+                cur.append(s)
+            else:
+                pieces.append((cur[0], cur[-1]))
+                cur = [s]
+        pieces.append((cur[0], cur[-1]))
+        return pieces
+
+    out = Path(args.out_dir) if args.out_dir else run / "vtk_instant"
+    (out / "domains").mkdir(parents=True, exist_ok=True)
+    summary = []
+    done_ss: set[int] = set()
+    for r, block in sorted(part.items()):
+        pieces = layer_pieces(block)
+        comp_ids = sorted({int(rec["component_id"]) for rec in meta_by_rank.get(r, [])})
+        if len(comp_ids) != len(pieces):
+            print(f"[warn] rank {r}: {len(comp_ids)} snapshot components vs "
+                  f"{len(pieces)} layer pieces — matching by order anyway")
+        start_ss_by_comp = {cid: pieces[i][0] for i, cid in enumerate(comp_ids) if i < len(pieces)}
+
+        target_global = int((block[0] + args.fraction * len(block)) * steps_per_ss)
+        best, best_d, best_g = None, None, None
+        for rec in meta_by_rank.get(r, []):
+            cid = int(rec["component_id"])
+            if cid not in start_ss_by_comp:
+                continue
+            g = start_ss_by_comp[cid] * steps_per_ss + int(rec["component_step"])
+            d = abs(g - target_global)
+            if best_d is None or d < best_d:
+                best, best_d, best_g = rec, d, g
+        if best is None:
+            raise SystemExit(f"rank {r}: no snapshots found")
+        ss_of_snap = best_g // steps_per_ss
+        layer = ss_of_snap // ss_per_layer
+        w = best_g - layer * ss_per_layer * steps_per_ss
+        cx, cy = pos_at_within_layer_step(w)
+        arr = np.load(run / "snapshots_par" / best["file"])
+        lz = layer * zsp
+        ncx, ncy, ncz = arr.shape
+        origin = (cx - 0.5 * (ncx - 1) * h_m, cy - 0.5 * (ncy - 1) * h_m, lz - (ncz - 1) * h_m)
+        _write_vtk_volume(out / "domains" / f"rank_{r:02d}.vtk", Ts + arr * deltaT, "full_K", origin, h_m)
+        done_ss.update(range(block[0], min(block[-1] + 1, ss_of_snap + 1)))
+        summary.append({"rank": r, "block": [block[0], block[-1]], "global_step": best_g,
+                        "layer": int(layer), "x_mm": cx * 1e3, "y_mm": cy * 1e3})
+        print(f"rank {r:2d}: SS [{block[0]:4d},{block[-1]:4d}]  step {best_g:7d}  "
+              f"layer {layer}  at ({cx*1e3:7.3f}, {cy*1e3:7.3f}) mm")
+
+    # --- path polylines, one copy per layer, chopped per SS ----------------
     ss_len_m = steps_per_ss * args.step_m
     ss_to_rank = {s: r for r, block in part.items() for s in block}
 
