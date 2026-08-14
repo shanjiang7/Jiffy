@@ -99,9 +99,9 @@ def main() -> None:
             meta_by_rank.setdefault(r, []).append(json.loads(line))
 
     # geometry: the (single-layer) path, densely resampled by arc length
+    # with len_scale=1.0 the builder returns physical coordinates (metres)
     sections = build_path_sections_nd_from_ini(args.path_config, len_scale=1.0)
-    pts_nd = np.vstack([a for a, on in sections if on])
-    pts_m = pts_nd * len_scale
+    pts_m = np.vstack([a for a, on in sections if on])
     seg = np.linalg.norm(np.diff(pts_m, axis=0), axis=1)
     arc = np.concatenate([[0.0], np.cumsum(seg)])
 
